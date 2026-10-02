@@ -27,7 +27,19 @@ npm install
 npm run start
 ```
 
-## 打 Android 调试包
+## 验收 APK
+
+云端构建产物（ARM）：安装包见 artifacts / 本机构建输出。
+
+```bash
+npx expo prebuild --platform android
+cd android && ./gradlew assembleRelease -PreactNativeArchitectures=armeabi-v7a,arm64-v8a
+```
+
+输出：`android/app/build/outputs/apk/release/app-release.apk`
+
+## 打 Android 包
+
 
 ```bash
 npx expo prebuild --platform android --clean

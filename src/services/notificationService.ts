@@ -1,4 +1,3 @@
-import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
@@ -14,10 +13,6 @@ Notifications.setNotificationHandler({
 });
 
 export async function ensureNotificationPermissions(): Promise<boolean> {
-  if (!Device.isDevice && Platform.OS !== 'android') {
-    // Emulators still useful for UI testing; allow scheduling on Android emulator.
-  }
-
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL_ID, {
       name: '喝水提醒',
