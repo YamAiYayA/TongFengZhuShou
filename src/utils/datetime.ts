@@ -36,6 +36,10 @@ export function addMinutes(d: Date, minutes: number): Date {
   return new Date(d.getTime() + minutes * 60_000);
 }
 
+export function addSeconds(d: Date, seconds: number): Date {
+  return new Date(d.getTime() + seconds * 1000);
+}
+
 export function minutesBetween(a: Date, b: Date): number {
   return Math.max(0, Math.round((b.getTime() - a.getTime()) / 60_000));
 }
@@ -44,8 +48,16 @@ export function formatTimeHm(d: Date): string {
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
+export function formatTimeHms(d: Date): string {
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+}
+
 export function formatDateTimeHm(d: Date): string {
   return `${dateKeyLocal(d)} ${formatTimeHm(d)}`;
+}
+
+export function formatDateTimeHms(d: Date): string {
+  return `${dateKeyLocal(d)} ${formatTimeHms(d)}`;
 }
 
 export function clamp(n: number, min: number, max: number): number {

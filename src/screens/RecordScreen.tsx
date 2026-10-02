@@ -19,6 +19,8 @@ import { useApp } from '../state/AppContext';
 import { RootStackParamList } from '../navigation/types';
 import { colors } from '../theme/colors';
 
+type NextRemindMode = 'none' | 'preset' | 'custom';
+
 export function RecordScreen() {
   const { snapshot, recordDrink, editDrink } = useApp();
   const navigation =
@@ -33,7 +35,10 @@ export function RecordScreen() {
     String(route.params?.initialAmount ?? snapshot?.quickAmounts[0] ?? 200),
   );
   const [minutesAgo, setMinutesAgo] = useState(0);
-  const [nextRemind, setNextRemind] = useState<number | null>(30);
+  const [nextMode, setNextMode] = useState<NextRemindMode>('preset');
+  const [presetMinutes, setPresetMinutes] = useState(30);
+  const [customMinutesText, setCustomMinutesText] = useState('0');
+  const [customSecondsText, setCustomSecondsText] = useState('30');
   const [saving, setSaving] = useState(false);
 
   const quickAmounts = snapshot?.quickAmounts ?? [];
@@ -43,6 +48,30 @@ export function RecordScreen() {
     () => (isEdit ? '修改喝水记录' : '记录喝水'),
     [isEdit],
   );
+
+  const resolveNextSeconds = (): number | null => {
+    if (nextMode === 'none') return null;
+    if (nextMode === 'preset') return presetMinutes * 60;
+
+    const minutes = Number(customMinutesText);
+    const seconds = Number(customSecondsText);
+    if (!Number.isFinite(minutes) || minutes < 0 || !Number.isInteger(minutes)) {
+      throw new Error('自定义分钟请输入非负整数');
+    }
+    if (
+      !Number.isFinite(seconds) ||
+      seconds < 0 ||
+      seconds > 59 ||
+      !Number.isInteger(seconds)
+    ) {
+      throw new Error('自定义秒数请输入 0–59 的整数');
+    }
+    const total = minutes * 60 + seconds;
+    if (total <= 0) {
+      throw new Error('下次提醒至少需要 1 秒');
+    }
+    return total;
+  };
 
   const onSave = async () => {
     const amount = Number(amountText);
@@ -55,11 +84,12 @@ export function RecordScreen() {
       if (isEdit && editId != null) {
         await editDrink(editId, { amountMl: amount, minutesAgo });
       } else {
+        const nextRemindInSeconds = resolveNextSeconds();
         await recordDrink({
           amountMl: amount,
           minutesAgo,
           source,
-          nextRemindInMinutes: nextRemind,
+          nextRemindInSeconds,
           reminderJobId,
         });
       }
@@ -115,24 +145,56 @@ export function RecordScreen() {
 
           {!isEdit ? (
             <>
-              <Label>下次提醒（分钟后）</Label>
+              <Label>下次提醒</Label>
               <ChipRow>
                 <Chip
                   label="不设置"
-                  selected={nextRemind == null}
-                  onPress={() => setNextRemind(null)}
+                  selected={nextMode === 'none'}
+                  onPress={() => setNextMode('none')}
                 />
                 {NEXT_REMIND_OPTIONS.map((m) => (
                   <Chip
                     key={m}
-                    label={`${m}`}
-                    selected={nextRemind === m}
-                    onPress={() => setNextRemind(m)}
+                    label={`${m}分`}
+                    selected={nextMode === 'preset' && presetMinutes === m}
+                    onPress={() => {
+                      setNextMode('preset');
+                      setPresetMinutes(m);
+                    }}
                   />
                 ))}
+                <Chip
+                  label="自定义"
+                  selected={nextMode === 'custom'}
+                  onPress={() => setNextMode('custom')}
+                />
               </ChipRow>
+
+              {nextMode === 'custom' ? (
+                <View style={styles.customRow}>
+                  <View style={styles.customField}>
+                    <Label>分</Label>
+                    <Field
+                      value={customMinutesText}
+                      onChangeText={setCustomMinutesText}
+                      keyboardType="number-pad"
+                      placeholder="0"
+                    />
+                  </View>
+                  <View style={styles.customField}>
+                    <Label>秒</Label>
+                    <Field
+                      value={customSecondsText}
+                      onChangeText={setCustomSecondsText}
+                      keyboardType="number-pad"
+                      placeholder="30"
+                    />
+                  </View>
+                </View>
+              ) : null}
+
               <Text style={styles.hint}>
-                截止时间后不会再催未达标。未设置则只保留必要的起床第一杯逻辑。
+                可快捷选分钟，或自定义「多少分多少秒」。截止后不会再催未达标。
               </Text>
             </>
           ) : null}
@@ -160,5 +222,12 @@ const styles = StyleSheet.create({
     color: colors.inkMuted,
     fontSize: 12,
     lineHeight: 18,
+  },
+  customRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  customField: {
+    flex: 1,
   },
 });

@@ -23,7 +23,7 @@ import {
   softDeleteWaterLog,
   updateWaterLog,
 } from '../repositories/waterLogRepository';
-import { addMinutes, combineDateAndTime } from '../utils/datetime';
+import { addMinutes, addSeconds, combineDateAndTime } from '../utils/datetime';
 import { computeDayProgress } from './waterCalc';
 import {
   cancelAllWaterNotifications,
@@ -144,6 +144,9 @@ export async function recordDrink(input: {
   amountMl: number;
   minutesAgo?: number;
   source: 'reminder' | 'manual';
+  /** Preferred: total seconds until next reminder. */
+  nextRemindInSeconds?: number | null;
+  /** @deprecated use nextRemindInSeconds */
   nextRemindInMinutes?: number | null;
   reminderJobId?: number | null;
 }): Promise<AppSnapshot> {
@@ -162,9 +165,16 @@ export async function recordDrink(input: {
     await updateReminderJob(input.reminderJobId, { status: 'completed' });
   }
 
-  if (input.nextRemindInMinutes != null && input.nextRemindInMinutes > 0) {
+  const nextSeconds =
+    input.nextRemindInSeconds != null
+      ? input.nextRemindInSeconds
+      : input.nextRemindInMinutes != null
+        ? input.nextRemindInMinutes * 60
+        : null;
+
+  if (nextSeconds != null && nextSeconds > 0) {
     await scheduleNextReminder({
-      nextFireAt: addMinutes(new Date(), input.nextRemindInMinutes),
+      nextFireAt: addSeconds(new Date(), nextSeconds),
       kind: 'water',
     });
   } else {

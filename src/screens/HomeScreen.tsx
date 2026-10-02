@@ -21,7 +21,11 @@ import {
 } from '../components/ui';
 import { useApp } from '../state/AppContext';
 import { colors } from '../theme/colors';
-import { formatDateTimeHm, formatTimeHm } from '../utils/datetime';
+import {
+  formatDateTimeHm,
+  formatDateTimeHms,
+  formatTimeHm,
+} from '../utils/datetime';
 import { RootStackParamList } from '../navigation/types';
 import { ProgressStatus } from '../models/types';
 
@@ -97,7 +101,7 @@ export function HomeScreen() {
           <Text style={styles.windowText}>
             下次提醒：
             {progress.nextReminderAt
-              ? formatDateTimeHm(progress.nextReminderAt)
+              ? formatDateTimeHms(progress.nextReminderAt)
               : '未安排（记录后可设置，或等起床提醒）'}
           </Text>
         </Card>
