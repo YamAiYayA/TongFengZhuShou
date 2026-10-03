@@ -56,15 +56,19 @@ export async function cancelAllWaterNotifications(): Promise<void> {
   await Notifications.cancelAllScheduledNotificationsAsync();
 }
 
-function paceLine(behindPlannedMl: number): string {
-  const behind = Math.max(0, Math.round(behindPlannedMl));
-  return `距离平均值还差 ${behind} ml`;
+/** Positive = ahead of plan; negative = behind plan. */
+function paceLine(paceDeltaMl: number): string {
+  const delta = Math.round(paceDeltaMl);
+  if (delta >= 0) {
+    return `超额完成 ${delta} ml`;
+  }
+  return `落后进度 ${Math.abs(delta)} ml`;
 }
 
 function buildContent(input: {
   remainingMl: number;
-  /** How many ml below the planned pace (0 if on track or ahead). */
-  behindPlannedMl: number;
+  /** actual - planned; positive means ahead. */
+  paceDeltaMl: number;
   kind: 'water' | 'first_cup';
   reminderJobId: number;
 }) {
@@ -73,7 +77,7 @@ function buildContent(input: {
     input.kind === 'first_cup'
       ? `今日第一杯还未记录，余量 ${input.remainingMl} ml`
       : `今日余量 ${input.remainingMl} ml`;
-  const line3 = paceLine(input.behindPlannedMl);
+  const line3 = paceLine(input.paceDeltaMl);
   // Three lines for phone + band preview: title + body line1 + body line2
   const body = `${line2}\n${line3}`;
 
@@ -84,7 +88,7 @@ function buildContent(input: {
       kind: input.kind,
       reminderJobId: input.reminderJobId,
       remainingMl: input.remainingMl,
-      behindPlannedMl: input.behindPlannedMl,
+      paceDeltaMl: input.paceDeltaMl,
     },
     sound: true as const,
     ...(Platform.OS === 'android' ? { channelId: ANDROID_CHANNEL_ID } : {}),
@@ -93,7 +97,7 @@ function buildContent(input: {
 
 export type WaterNotificationPayload = {
   remainingMl: number;
-  behindPlannedMl: number;
+  paceDeltaMl: number;
   kind: 'water' | 'first_cup';
   reminderJobId: number;
 };

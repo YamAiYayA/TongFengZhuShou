@@ -35,9 +35,10 @@ import {
   scheduleWaterNotification,
 } from './notificationService';
 
-function behindPlannedMl(settings: UserSettings, logs: WaterLog[]): number {
+/** actual - planned; positive means ahead of pace. */
+function paceDeltaMl(settings: UserSettings, logs: WaterLog[]): number {
   const curves = buildDayCurves({ settings, logs });
-  return Math.max(0, Math.round(curves.plannedNowMl - curves.actualNowMl));
+  return Math.round(curves.actualNowMl - curves.plannedNowMl);
 }
 
 export interface AppSnapshot {
@@ -58,21 +59,21 @@ async function scheduleSingleReminder(input: {
   fireAt: Date;
   kind: 'water' | 'first_cup';
   remainingMl: number;
-  behindPlannedMl: number;
+  paceDeltaMl: number;
 }): Promise<ReminderJob | null> {
   const job = await createReminderJob({
     fire_at: input.fireAt,
     kind: input.kind,
     payload: {
       remainingMl: input.remainingMl,
-      behindPlannedMl: input.behindPlannedMl,
+      paceDeltaMl: input.paceDeltaMl,
     },
   });
 
   const scheduled = await scheduleWaterNotification({
     fireAt: input.fireAt,
     remainingMl: input.remainingMl,
-    behindPlannedMl: input.behindPlannedMl,
+    paceDeltaMl: input.paceDeltaMl,
     kind: input.kind,
     reminderJobId: job.id,
   });
@@ -139,7 +140,7 @@ export async function scheduleNextReminder(options?: {
     fireAt,
     kind,
     remainingMl: progress.remainingMl,
-    behindPlannedMl: behindPlannedMl(settings, logs),
+    paceDeltaMl: paceDeltaMl(settings, logs),
   });
 }
 
@@ -176,7 +177,7 @@ export async function advanceDueReminders(options?: {
   ) {
     await presentWaterNotificationNow({
       remainingMl: progress.remainingMl,
-      behindPlannedMl: behindPlannedMl(settings, logs),
+      paceDeltaMl: paceDeltaMl(settings, logs),
       kind: lastDue.kind === 'first_cup' ? 'first_cup' : 'water',
       reminderJobId: lastDue.id,
     });
