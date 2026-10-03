@@ -19,9 +19,11 @@ import {
   Subtitle,
   Title,
 } from '../components/ui';
+import { WaterCurveChart } from '../components/WaterCurveChart';
 import { useApp } from '../state/AppContext';
 import { useCountdown } from '../hooks/useCountdown';
 import { colors } from '../theme/colors';
+import { buildDayCurves } from '../services/waterCurve';
 import {
   formatCountdown,
   formatDateTimeHm,
@@ -47,7 +49,14 @@ function statusColor(status: ProgressStatus): string {
 }
 
 export function HomeScreen() {
-  const { snapshot, loading, refresh, deleteDrink, error } = useApp();
+  const {
+    snapshot,
+    loading,
+    refresh,
+    advanceDueReminders,
+    deleteDrink,
+    error,
+  } = useApp();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const nextReminderAt = snapshot?.progress.nextReminderAt ?? null;
@@ -67,11 +76,12 @@ export function HomeScreen() {
       hitZeroRef.current = false;
       return;
     }
+    // Countdown hit zero: fire notification + schedule next repeat interval.
     if (!hitZeroRef.current) {
       hitZeroRef.current = true;
-      void refresh();
+      void advanceDueReminders({ presentNotification: true });
     }
-  }, [countdownSeconds, refresh]);
+  }, [countdownSeconds, advanceDueReminders]);
 
   if (!snapshot) {
     return (
@@ -82,14 +92,22 @@ export function HomeScreen() {
     );
   }
 
-  const { progress, logs, nextReminder } = snapshot;
+  const { progress, logs, nextReminder, settings } = snapshot;
+  const curves = buildDayCurves({ settings, logs });
 
   return (
     <Screen style={{ paddingHorizontal: 0 }}>
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={
-          <RefreshControl refreshing={loading} onRefresh={() => void refresh()} />
+          <RefreshControl
+            refreshing={loading}
+            onRefresh={() =>
+              void advanceDueReminders({ presentNotification: false }).then(
+                () => refresh(),
+              )
+            }
+          />
         }
       >
         <Title>痛风喝水助手</Title>
@@ -133,10 +151,14 @@ export function HomeScreen() {
                   : '时间到'}
               </Text>
               <Text style={styles.countdownHint}>
-                未操作将每 {snapshot.settings.repeat_interval_minutes} 分钟再提醒
+                未操作将每 {settings.repeat_interval_minutes} 分钟再提醒并通知
               </Text>
             </View>
           ) : null}
+        </Card>
+
+        <Card>
+          <WaterCurveChart curves={curves} />
         </Card>
 
         <Card>

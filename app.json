@@ -27,7 +27,7 @@
     },
     "android": {
       "package": "com.yama.tongfengzhushou",
-      "versionCode": 1,
+      "versionCode": 3,
       "adaptiveIcon": {
         "backgroundColor": "#E7F1EC",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -39,6 +39,7 @@
         "RECEIVE_BOOT_COMPLETED",
         "VIBRATE",
         "SCHEDULE_EXACT_ALARM",
+        "USE_EXACT_ALARM",
         "POST_NOTIFICATIONS",
         "WAKE_LOCK"
       ]

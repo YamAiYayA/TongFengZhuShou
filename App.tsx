@@ -16,7 +16,7 @@ import { RecordScreen } from './src/screens/RecordScreen';
 import { ReminderScreen } from './src/screens/ReminderScreen';
 import { MainTabParamList, RootStackParamList } from './src/navigation/types';
 import { colors } from './src/theme/colors';
-import { onReminderNotificationDelivered } from './src/services/waterAppService';
+import * as waterApp from './src/services/waterAppService';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -73,7 +73,7 @@ function RootNavigator() {
         reminderJobId?: number;
         kind?: 'water' | 'first_cup';
       };
-      void onReminderNotificationDelivered(
+      void waterApp.onReminderNotificationDelivered(
         data?.reminderJobId ? Number(data.reminderJobId) : undefined,
       );
       navRef.current?.navigate('Reminder', {
@@ -88,7 +88,8 @@ function RootNavigator() {
       const data = notification.request.content.data as {
         reminderJobId?: number;
       };
-      void onReminderNotificationDelivered(
+      // Delivered (including while ignored): mark fired and queue next repeat.
+      void waterApp.onReminderNotificationDelivered(
         data?.reminderJobId ? Number(data.reminderJobId) : undefined,
       );
     };

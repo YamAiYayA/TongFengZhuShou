@@ -6,6 +6,7 @@ import React, {
   useMemo,
   useState,
 } from 'react';
+import { AppState, AppStateStatus } from 'react-native';
 import { AppSnapshot } from '../services/waterAppService';
 import * as waterApp from '../services/waterAppService';
 import { SettingsUpdate } from '../repositories/settingsRepository';
@@ -16,6 +17,9 @@ interface AppContextValue {
   error: string | null;
   snapshot: AppSnapshot | null;
   refresh: () => Promise<void>;
+  advanceDueReminders: (opts?: {
+    presentNotification?: boolean;
+  }) => Promise<void>;
   recordDrink: typeof waterApp.recordDrink;
   snoozeReminder: typeof waterApp.snoozeReminder;
   editDrink: typeof waterApp.editDrink;
@@ -46,6 +50,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const advanceDueReminders = useCallback(
+    async (opts?: { presentNotification?: boolean }) => {
+      try {
+        const snap = await waterApp.advanceDueReminders(opts);
+        setSnapshot(snap);
+        setReady(true);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : '推进提醒失败');
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -70,6 +87,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  useEffect(() => {
+    const onChange = (state: AppStateStatus) => {
+      if (state === 'active') {
+        void advanceDueReminders({ presentNotification: false });
+      }
+    };
+    const sub = AppState.addEventListener('change', onChange);
+    return () => sub.remove();
+  }, [advanceDueReminders]);
+
   const value = useMemo<AppContextValue>(
     () => ({
       ready,
@@ -77,6 +104,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       error,
       snapshot,
       refresh,
+      advanceDueReminders,
       recordDrink: async (input) => {
         const snap = await waterApp.recordDrink(input);
         setSnapshot(snap);
@@ -107,7 +135,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         return job;
       },
     }),
-    [ready, loading, error, snapshot, refresh],
+    [ready, loading, error, snapshot, refresh, advanceDueReminders],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
