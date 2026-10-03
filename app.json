@@ -22,12 +22,14 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.yama.tongfengzhushou",
       "infoPlist": {
-        "UIBackgroundModes": ["remote-notification"]
+        "UIBackgroundModes": [
+          "remote-notification"
+        ]
       }
     },
     "android": {
       "package": "com.yama.tongfengzhushou",
-      "versionCode": 3,
+      "versionCode": 4,
       "adaptiveIcon": {
         "backgroundColor": "#E7F1EC",
         "foregroundImage": "./assets/android-icon-foreground.png",

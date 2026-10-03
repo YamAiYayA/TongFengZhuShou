@@ -56,16 +56,26 @@ export async function cancelAllWaterNotifications(): Promise<void> {
   await Notifications.cancelAllScheduledNotificationsAsync();
 }
 
+function paceLine(behindPlannedMl: number): string {
+  const behind = Math.max(0, Math.round(behindPlannedMl));
+  return `距离平均值还差 ${behind} ml`;
+}
+
 function buildContent(input: {
   remainingMl: number;
+  /** How many ml below the planned pace (0 if on track or ahead). */
+  behindPlannedMl: number;
   kind: 'water' | 'first_cup';
   reminderJobId: number;
 }) {
   const title = input.kind === 'first_cup' ? '该喝第一杯水了' : '该喝水了';
-  const body =
+  const line2 =
     input.kind === 'first_cup'
       ? `今日第一杯还未记录，余量 ${input.remainingMl} ml`
       : `今日余量 ${input.remainingMl} ml`;
+  const line3 = paceLine(input.behindPlannedMl);
+  // Three lines for phone + band preview: title + body line1 + body line2
+  const body = `${line2}\n${line3}`;
 
   return {
     title,
@@ -74,18 +84,24 @@ function buildContent(input: {
       kind: input.kind,
       reminderJobId: input.reminderJobId,
       remainingMl: input.remainingMl,
+      behindPlannedMl: input.behindPlannedMl,
     },
     sound: true as const,
     ...(Platform.OS === 'android' ? { channelId: ANDROID_CHANNEL_ID } : {}),
   };
 }
 
-/** Show a notification right now (for due reminders while app is open / advancing). */
-export async function presentWaterNotificationNow(input: {
+export type WaterNotificationPayload = {
   remainingMl: number;
+  behindPlannedMl: number;
   kind: 'water' | 'first_cup';
   reminderJobId: number;
-}): Promise<string | null> {
+};
+
+/** Show a notification right now (for due reminders while app is open / advancing). */
+export async function presentWaterNotificationNow(
+  input: WaterNotificationPayload,
+): Promise<string | null> {
   const allowed = await ensureNotificationPermissions();
   if (!allowed) return null;
 
@@ -100,12 +116,9 @@ export async function presentWaterNotificationNow(input: {
  * Returns the actual fire time used (may be bumped a couple seconds if too soon)
  * and the notification id.
  */
-export async function scheduleWaterNotification(input: {
-  fireAt: Date;
-  remainingMl: number;
-  kind: 'water' | 'first_cup';
-  reminderJobId: number;
-}): Promise<{ notificationId: string | null; fireAt: Date }> {
+export async function scheduleWaterNotification(
+  input: WaterNotificationPayload & { fireAt: Date },
+): Promise<{ notificationId: string | null; fireAt: Date }> {
   const allowed = await ensureNotificationPermissions();
   if (!allowed) return { notificationId: null, fireAt: input.fireAt };
 
@@ -124,11 +137,7 @@ export async function scheduleWaterNotification(input: {
   const useInterval = secondsUntil <= 3600;
 
   const notificationId = await Notifications.scheduleNotificationAsync({
-    content: buildContent({
-      remainingMl: input.remainingMl,
-      kind: input.kind,
-      reminderJobId: input.reminderJobId,
-    }),
+    content: buildContent(input),
     trigger: useInterval
       ? {
           type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
