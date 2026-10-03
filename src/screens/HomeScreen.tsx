@@ -1,4 +1,4 @@
-import React, { useLayoutEffect } from 'react';
+import React, { useEffect, useLayoutEffect, useRef } from 'react';
 import {
   Alert,
   RefreshControl,
@@ -20,8 +20,10 @@ import {
   Title,
 } from '../components/ui';
 import { useApp } from '../state/AppContext';
+import { useCountdown } from '../hooks/useCountdown';
 import { colors } from '../theme/colors';
 import {
+  formatCountdown,
   formatDateTimeHm,
   formatDateTimeHms,
   formatTimeHm,
@@ -48,10 +50,28 @@ export function HomeScreen() {
   const { snapshot, loading, refresh, deleteDrink, error } = useApp();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const nextReminderAt = snapshot?.progress.nextReminderAt ?? null;
+  const countdownSeconds = useCountdown(nextReminderAt);
+  const hitZeroRef = useRef(false);
 
   useLayoutEffect(() => {
     navigation.setOptions({ title: '痛风喝水助手' });
   }, [navigation]);
+
+  useEffect(() => {
+    if (countdownSeconds == null) {
+      hitZeroRef.current = false;
+      return;
+    }
+    if (countdownSeconds > 0) {
+      hitZeroRef.current = false;
+      return;
+    }
+    if (!hitZeroRef.current) {
+      hitZeroRef.current = true;
+      void refresh();
+    }
+  }, [countdownSeconds, refresh]);
 
   if (!snapshot) {
     return (
@@ -104,6 +124,16 @@ export function HomeScreen() {
               ? formatDateTimeHms(progress.nextReminderAt)
               : '未安排（记录后可设置，或等起床提醒）'}
           </Text>
+          {countdownSeconds != null ? (
+            <View style={styles.countdownBox}>
+              <Text style={styles.countdownLabel}>距离下次提醒</Text>
+              <Text style={styles.countdownValue}>
+                {countdownSeconds > 0
+                  ? formatCountdown(countdownSeconds)
+                  : '时间到'}
+              </Text>
+            </View>
+          ) : null}
         </Card>
 
         <Card>
@@ -242,6 +272,28 @@ const styles = StyleSheet.create({
     color: colors.inkMuted,
     fontSize: 13,
     lineHeight: 18,
+  },
+  countdownBox: {
+    marginTop: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    backgroundColor: colors.bgWarm,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  countdownLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.inkMuted,
+  },
+  countdownValue: {
+    marginTop: 4,
+    fontSize: 36,
+    fontWeight: '800',
+    color: colors.primary,
+    letterSpacing: 1,
+    fontVariant: ['tabular-nums'],
   },
   sectionTitle: {
     fontSize: 17,
