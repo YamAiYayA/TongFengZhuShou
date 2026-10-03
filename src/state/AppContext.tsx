@@ -10,6 +10,7 @@ import { AppState, AppStateStatus } from 'react-native';
 import { AppSnapshot } from '../services/waterAppService';
 import * as waterApp from '../services/waterAppService';
 import { SettingsUpdate } from '../repositories/settingsRepository';
+import { syncKeepAliveWithSettings } from '../services/backgroundKeepAlive';
 
 interface AppContextValue {
   ready: boolean;
@@ -73,6 +74,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (!cancelled) {
           setSnapshot(snap);
           setReady(true);
+          void syncKeepAliveWithSettings(
+            snap.settings.notifications_enabled === 1,
+          ).catch(() => undefined);
         }
       } catch (e) {
         if (!cancelled) {
@@ -128,6 +132,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       saveSettings: async (patch) => {
         const snap = await waterApp.saveSettingsAndReschedule(patch);
         setSnapshot(snap);
+        await syncKeepAliveWithSettings(
+          snap.settings.notifications_enabled === 1,
+        ).catch(() => undefined);
       },
       scheduleNextReminder: async (options) => {
         const job = await waterApp.scheduleNextReminder(options);

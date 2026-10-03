@@ -7,6 +7,7 @@ import {
   Field,
   Label,
   PrimaryButton,
+  SecondaryButton,
   Screen,
   Subtitle,
   Title,
@@ -14,6 +15,11 @@ import {
 import { useApp } from '../state/AppContext';
 import { colors } from '../theme/colors';
 import { ensureNotificationPermissions } from '../services/notificationService';
+import {
+  isKeepAliveRunning,
+  openBatteryOptimizationSettings,
+  startKeepAlive,
+} from '../services/backgroundKeepAlive';
 import {
   DEFAULT_QUICK_AMOUNTS,
   DEFAULT_REPEAT_INTERVAL_MINUTES,
@@ -39,6 +45,7 @@ export function SettingsScreen() {
   );
   const [enabled, setEnabled] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [keepAliveOn, setKeepAliveOn] = useState(false);
 
   useEffect(() => {
     if (!snapshot) return;
@@ -48,6 +55,7 @@ export function SettingsScreen() {
     setQuickText(snapshot.quickAmounts.join(','));
     setRepeatMinutes(String(snapshot.settings.repeat_interval_minutes));
     setEnabled(snapshot.settings.notifications_enabled === 1);
+    setKeepAliveOn(isKeepAliveRunning());
   }, [snapshot]);
 
   const onSave = async () => {
@@ -95,11 +103,38 @@ export function SettingsScreen() {
         notifications_enabled: enabled ? 1 : 0,
         repeat_interval_minutes: repeat,
       });
-      Alert.alert('已保存', '设置已更新，提醒已按新规则重排。');
+      setKeepAliveOn(isKeepAliveRunning());
+      Alert.alert(
+        '已保存',
+        enabled
+          ? '设置已更新。后台提醒服务已启动，可在系统「查看后台活动」中看到本应用。'
+          : '设置已更新，后台提醒服务已关闭。',
+      );
     } catch (e) {
       Alert.alert('保存失败', e instanceof Error ? e.message : '未知错误');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const onStartKeepAlive = async () => {
+    try {
+      const ok = await ensureNotificationPermissions();
+      if (!ok) {
+        Alert.alert('需要通知权限', '后台服务需要常驻通知才能运行。');
+        return;
+      }
+      await startKeepAlive(true);
+      setKeepAliveOn(isKeepAliveRunning());
+      Alert.alert(
+        '后台服务已启动',
+        '通知栏会出现「痛风喝水助手」常驻通知；在多任务页点「查看后台活动」应能看到本应用。',
+      );
+    } catch (e) {
+      Alert.alert(
+        '启动失败',
+        e instanceof Error ? e.message : '无法启动后台服务',
+      );
     }
   };
 
@@ -173,6 +208,26 @@ export function SettingsScreen() {
               trackColor={{ true: colors.primary, false: colors.line }}
             />
           </View>
+        </Card>
+
+        <Card style={{ marginTop: 12 }}>
+          <Text style={styles.switchLabel}>后台常驻（小米后台活动）</Text>
+          <Text style={styles.hint}>
+            开启通知提醒后会自动启动前台服务，应用会出现在系统「查看后台活动」列表，降低被清理导致漏提醒的概率。当前状态：
+            {keepAliveOn ? '运行中' : '未运行'}。
+          </Text>
+          <Text style={styles.hint}>
+            建议同时把本应用设为「无限制」省电、允许自启动；否则小米仍可能杀掉后台。
+          </Text>
+          <PrimaryButton
+            label={keepAliveOn ? '重新启动后台服务' : '立即启动后台服务'}
+            onPress={() => void onStartKeepAlive()}
+          />
+          <View style={{ height: 10 }} />
+          <SecondaryButton
+            label="打开电池优化设置"
+            onPress={() => void openBatteryOptimizationSettings()}
+          />
         </Card>
 
         <PrimaryButton

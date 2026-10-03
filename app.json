@@ -16,7 +16,8 @@
           "color": "#0B6E4F",
           "defaultChannel": "water-reminders"
         }
-      ]
+      ],
+      "./plugins/withBackgroundService"
     ],
     "ios": {
       "supportsTablet": true,
@@ -29,7 +30,7 @@
     },
     "android": {
       "package": "com.yama.tongfengzhushou",
-      "versionCode": 5,
+      "versionCode": 6,
       "adaptiveIcon": {
         "backgroundColor": "#E7F1EC",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -43,7 +44,10 @@
         "SCHEDULE_EXACT_ALARM",
         "USE_EXACT_ALARM",
         "POST_NOTIFICATIONS",
-        "WAKE_LOCK"
+        "WAKE_LOCK",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_SPECIAL_USE",
+        "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"
       ]
     },
     "web": {
