@@ -16,7 +16,7 @@ import { RecordScreen } from './src/screens/RecordScreen';
 import { ReminderScreen } from './src/screens/ReminderScreen';
 import { MainTabParamList, RootStackParamList } from './src/navigation/types';
 import { colors } from './src/theme/colors';
-import { markReminderFired } from './src/services/waterAppService';
+import { onReminderNotificationDelivered } from './src/services/waterAppService';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -73,9 +73,9 @@ function RootNavigator() {
         reminderJobId?: number;
         kind?: 'water' | 'first_cup';
       };
-      if (data?.reminderJobId) {
-        void markReminderFired(Number(data.reminderJobId));
-      }
+      void onReminderNotificationDelivered(
+        data?.reminderJobId ? Number(data.reminderJobId) : undefined,
+      );
       navRef.current?.navigate('Reminder', {
         reminderJobId: data?.reminderJobId
           ? Number(data.reminderJobId)
@@ -84,15 +84,29 @@ function RootNavigator() {
       });
     };
 
-    const sub = Notifications.addNotificationResponseReceivedListener(
+    const onReceived = (notification: Notifications.Notification) => {
+      const data = notification.request.content.data as {
+        reminderJobId?: number;
+      };
+      void onReminderNotificationDelivered(
+        data?.reminderJobId ? Number(data.reminderJobId) : undefined,
+      );
+    };
+
+    const responseSub = Notifications.addNotificationResponseReceivedListener(
       openFromNotification,
     );
+    const receivedSub =
+      Notifications.addNotificationReceivedListener(onReceived);
 
     void Notifications.getLastNotificationResponseAsync().then((response) => {
       if (response) openFromNotification(response);
     });
 
-    return () => sub.remove();
+    return () => {
+      responseSub.remove();
+      receivedSub.remove();
+    };
   }, []);
 
   return (

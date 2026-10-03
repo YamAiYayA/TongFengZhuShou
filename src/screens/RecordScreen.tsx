@@ -148,7 +148,7 @@ export function RecordScreen() {
               <Label>下次提醒</Label>
               <ChipRow>
                 <Chip
-                  label="不设置"
+                  label="按重复间隔"
                   selected={nextMode === 'none'}
                   onPress={() => setNextMode('none')}
                 />
@@ -194,7 +194,7 @@ export function RecordScreen() {
               ) : null}
 
               <Text style={styles.hint}>
-                可快捷选分钟，或自定义「多少分多少秒」。截止后不会再催未达标。
+                可快捷选分钟，或自定义分秒。「按重复间隔」表示用设置里的未操作重复分钟。提醒后不操作也会按该间隔继续提醒。
               </Text>
             </>
           ) : null}

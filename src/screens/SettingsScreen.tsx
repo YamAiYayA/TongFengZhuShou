@@ -14,7 +14,10 @@ import {
 import { useApp } from '../state/AppContext';
 import { colors } from '../theme/colors';
 import { ensureNotificationPermissions } from '../services/notificationService';
-import { DEFAULT_QUICK_AMOUNTS } from '../models/types';
+import {
+  DEFAULT_QUICK_AMOUNTS,
+  DEFAULT_REPEAT_INTERVAL_MINUTES,
+} from '../models/types';
 
 function normalizeTime(input: string): string | null {
   const m = input.trim().match(/^(\d{1,2}):(\d{2})$/);
@@ -31,6 +34,9 @@ export function SettingsScreen() {
   const [wake, setWake] = useState('07:00');
   const [cutoff, setCutoff] = useState('21:00');
   const [quickText, setQuickText] = useState(DEFAULT_QUICK_AMOUNTS.join(','));
+  const [repeatMinutes, setRepeatMinutes] = useState(
+    String(DEFAULT_REPEAT_INTERVAL_MINUTES),
+  );
   const [enabled, setEnabled] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -40,6 +46,7 @@ export function SettingsScreen() {
     setWake(snapshot.settings.wake_time);
     setCutoff(snapshot.settings.cutoff_time);
     setQuickText(snapshot.quickAmounts.join(','));
+    setRepeatMinutes(String(snapshot.settings.repeat_interval_minutes));
     setEnabled(snapshot.settings.notifications_enabled === 1);
   }, [snapshot]);
 
@@ -47,12 +54,17 @@ export function SettingsScreen() {
     const goalMl = Number(goal);
     const wakeTime = normalizeTime(wake);
     const cutoffTime = normalizeTime(cutoff);
+    const repeat = Number(repeatMinutes);
     if (!Number.isFinite(goalMl) || goalMl <= 0) {
       Alert.alert('目标总量无效');
       return;
     }
     if (!wakeTime || !cutoffTime) {
       Alert.alert('时间格式请用 HH:mm，例如 07:00');
+      return;
+    }
+    if (!Number.isFinite(repeat) || repeat < 1 || !Number.isInteger(repeat)) {
+      Alert.alert('重复提醒间隔请输入至少 1 的整数分钟');
       return;
     }
     const amounts = quickText
@@ -81,6 +93,7 @@ export function SettingsScreen() {
         cutoff_time: cutoffTime,
         quick_amounts_json: JSON.stringify(amounts),
         notifications_enabled: enabled ? 1 : 0,
+        repeat_interval_minutes: repeat,
       });
       Alert.alert('已保存', '设置已更新，提醒已按新规则重排。');
     } catch (e) {
@@ -109,6 +122,27 @@ export function SettingsScreen() {
           <Label>睡觉/截止时间（HH:mm）</Label>
           <Field value={cutoff} onChangeText={setCutoff} placeholder="21:00" />
           <Text style={styles.hint}>截止后不再因未达标继续催促。</Text>
+
+          <Label>未操作重复提醒间隔（分钟）</Label>
+          <Field
+            value={repeatMinutes}
+            onChangeText={setRepeatMinutes}
+            keyboardType="number-pad"
+            placeholder="15"
+          />
+          <ChipRow>
+            {[5, 10, 15, 20, 30, 60].map((m) => (
+              <Chip
+                key={m}
+                label={`${m}分`}
+                selected={repeatMinutes === String(m)}
+                onPress={() => setRepeatMinutes(String(m))}
+              />
+            ))}
+          </ChipRow>
+          <Text style={styles.hint}>
+            提醒响了如果你不点「已喝/延后」，也会按这个间隔继续提醒，直到截止时间。
+          </Text>
 
           <Label>常用毫升按钮</Label>
           <Field
@@ -152,7 +186,7 @@ export function SettingsScreen() {
           label="立即检查并安排提醒"
           onPress={() =>
             void scheduleNextReminder().then(() =>
-              Alert.alert('已处理', '若需要第一杯提醒，已重新安排。'),
+              Alert.alert('已处理', '已按当前规则重新安排提醒链。'),
             )
           }
         />

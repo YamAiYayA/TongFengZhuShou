@@ -4,6 +4,15 @@ const DB_NAME = 'tongfeng_v1.db';
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
+async function tableHasColumn(
+  db: SQLite.SQLiteDatabase,
+  table: string,
+  column: string,
+): Promise<boolean> {
+  const rows = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(${table})`);
+  return rows.some((r) => r.name === column);
+}
+
 /**
  * Local SQLite schema mirrors planned MySQL tables so sync can map 1:1 later.
  * All timestamps stored as ISO-8601 UTC strings.
@@ -21,6 +30,7 @@ async function migrate(db: SQLite.SQLiteDatabase): Promise<void> {
       cutoff_time TEXT NOT NULL,
       quick_amounts_json TEXT NOT NULL,
       notifications_enabled INTEGER NOT NULL DEFAULT 1,
+      repeat_interval_minutes INTEGER NOT NULL DEFAULT 15,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -55,6 +65,12 @@ async function migrate(db: SQLite.SQLiteDatabase): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_reminder_jobs_user_status_fire
       ON reminder_jobs(user_id, status, fire_at);
   `);
+
+  if (!(await tableHasColumn(db, 'user_settings', 'repeat_interval_minutes'))) {
+    await db.execAsync(
+      `ALTER TABLE user_settings ADD COLUMN repeat_interval_minutes INTEGER NOT NULL DEFAULT 15`,
+    );
+  }
 }
 
 export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {

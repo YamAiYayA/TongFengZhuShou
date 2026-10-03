@@ -32,6 +32,9 @@ import {
   scheduleWaterNotification,
 } from './notificationService';
 
+/** How many follow-up reminders to pre-schedule so ignores still get pings offline. */
+const MAX_CHAIN = 24;
+
 export interface AppSnapshot {
   settings: UserSettings;
   quickAmounts: number[];
@@ -46,10 +49,50 @@ async function cancelJobsAndNotifications(jobs: ReminderJob[]): Promise<void> {
   }
 }
 
+async function scheduleReminderChain(input: {
+  firstFireAt: Date;
+  kind: 'water' | 'first_cup';
+  remainingMl: number;
+  cutoffAt: Date;
+  repeatIntervalMinutes: number;
+}): Promise<ReminderJob | null> {
+  const interval = Math.max(1, Math.round(input.repeatIntervalMinutes));
+  let fireAt = input.firstFireAt;
+  let firstJob: ReminderJob | null = null;
+  let count = 0;
+
+  while (fireAt <= input.cutoffAt && count < MAX_CHAIN) {
+    const kind = count === 0 ? input.kind : 'water';
+    const job = await createReminderJob({
+      fire_at: fireAt,
+      kind,
+      payload: {
+        remainingMl: input.remainingMl,
+        chainIndex: count,
+        repeatIntervalMinutes: interval,
+      },
+    });
+
+    const notificationId = await scheduleWaterNotification({
+      fireAt,
+      remainingMl: input.remainingMl,
+      kind,
+      reminderJobId: job.id,
+    });
+    await updateReminderJob(job.id, { notification_id: notificationId });
+
+    if (!firstJob) firstJob = (await getReminderById(job.id)) ?? job;
+    fireAt = addMinutes(fireAt, interval);
+    count += 1;
+  }
+
+  return firstJob;
+}
+
 /**
- * Rebuilds the next local notification from current progress.
- * - Before first drink and after wake: first_cup reminder at wake (or soon).
- * - After drinks: only schedules when caller provides nextFireAt.
+ * Rebuilds reminder notifications from current progress.
+ * - Schedules the first fire, then auto repeats every repeat_interval_minutes
+ *   until cutoff (so ignoring a reminder still gets the next ones).
  * - After cutoff: no "未达标" nagging.
  */
 export async function scheduleNextReminder(options?: {
@@ -62,6 +105,7 @@ export async function scheduleNextReminder(options?: {
   const wakeAt = combineDateAndTime(now, settings.wake_time);
   const cutoffAt = combineDateAndTime(now, settings.cutoff_time);
   const progress = computeDayProgress({ settings, logs, now });
+  const repeatMinutes = settings.repeat_interval_minutes;
 
   const previous = await cancelPendingReminders();
   await cancelJobsAndNotifications(previous);
@@ -83,29 +127,28 @@ export async function scheduleNextReminder(options?: {
       fireAt = now < wakeAt ? wakeAt : addMinutes(now, 1);
       kind = 'first_cup';
     } else {
-      return null;
+      // Keep reminding after drinks / ignored alerts using the repeat interval.
+      fireAt = addMinutes(now, repeatMinutes);
+      kind = 'water';
     }
+  }
+
+  // Never schedule in the past.
+  if (fireAt.getTime() <= now.getTime()) {
+    fireAt = addSeconds(now, 2);
   }
 
   if (fireAt > cutoffAt) {
     return null;
   }
 
-  const job = await createReminderJob({
-    fire_at: fireAt,
+  return scheduleReminderChain({
+    firstFireAt: fireAt,
     kind,
-    payload: { remainingMl: progress.remainingMl },
-  });
-
-  const notificationId = await scheduleWaterNotification({
-    fireAt,
     remainingMl: progress.remainingMl,
-    kind,
-    reminderJobId: job.id,
+    cutoffAt,
+    repeatIntervalMinutes: repeatMinutes,
   });
-
-  await updateReminderJob(job.id, { notification_id: notificationId });
-  return (await getReminderById(job.id)) ?? job;
 }
 
 export async function getSnapshot(): Promise<AppSnapshot> {
@@ -132,10 +175,11 @@ export async function saveSettingsAndReschedule(
 ): Promise<AppSnapshot> {
   await updateSettings(patch);
   const current = await getNextPendingReminder();
-  const nextFireAt =
-    current && current.kind === 'water' ? new Date(current.fire_at) : null;
+  const nextFireAt = current ? new Date(current.fire_at) : null;
   await scheduleNextReminder(
-    nextFireAt ? { nextFireAt, kind: 'water' } : undefined,
+    nextFireAt
+      ? { nextFireAt, kind: current?.kind === 'first_cup' ? 'first_cup' : 'water' }
+      : undefined,
   );
   return getSnapshot();
 }
@@ -165,12 +209,13 @@ export async function recordDrink(input: {
     await updateReminderJob(input.reminderJobId, { status: 'completed' });
   }
 
+  const settings = await getSettings();
   const nextSeconds =
     input.nextRemindInSeconds != null
       ? input.nextRemindInSeconds
       : input.nextRemindInMinutes != null
         ? input.nextRemindInMinutes * 60
-        : null;
+        : settings.repeat_interval_minutes * 60;
 
   if (nextSeconds != null && nextSeconds > 0) {
     await scheduleNextReminder({
@@ -236,6 +281,7 @@ export async function deleteDrink(id: number): Promise<AppSnapshot> {
 export async function bootstrapApp(): Promise<AppSnapshot> {
   await ensureNotificationPermissions();
   const snap = await getSnapshot();
+  // Ensure a reminder chain exists during the drinking window.
   if (!snap.nextReminder) {
     await scheduleNextReminder();
     return getSnapshot();
@@ -245,4 +291,20 @@ export async function bootstrapApp(): Promise<AppSnapshot> {
 
 export async function markReminderFired(reminderJobId: number): Promise<void> {
   await updateReminderJob(reminderJobId, { status: 'fired' });
+}
+
+/**
+ * When a notification is delivered (even if user ignores it), keep the chain
+ * healthy: if somehow no pending remains, schedule the next repeat.
+ */
+export async function onReminderNotificationDelivered(
+  reminderJobId?: number,
+): Promise<void> {
+  if (reminderJobId) {
+    await markReminderFired(reminderJobId);
+  }
+  const next = await getNextPendingReminder();
+  if (!next) {
+    await scheduleNextReminder();
+  }
 }

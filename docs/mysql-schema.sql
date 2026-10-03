@@ -9,6 +9,7 @@ CREATE TABLE user_settings (
   cutoff_time CHAR(5) NOT NULL COMMENT 'HH:mm',
   quick_amounts_json JSON NOT NULL,
   notifications_enabled TINYINT NOT NULL DEFAULT 1,
+  repeat_interval_minutes INT NOT NULL DEFAULT 15 COMMENT '未操作时重复提醒间隔（分钟）',
   created_at DATETIME(3) NOT NULL,
   updated_at DATETIME(3) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

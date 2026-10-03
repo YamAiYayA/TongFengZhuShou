@@ -132,6 +132,9 @@ export function HomeScreen() {
                   ? formatCountdown(countdownSeconds)
                   : '时间到'}
               </Text>
+              <Text style={styles.countdownHint}>
+                未操作将每 {snapshot.settings.repeat_interval_minutes} 分钟再提醒
+              </Text>
             </View>
           ) : null}
         </Card>
@@ -294,6 +297,11 @@ const styles = StyleSheet.create({
     color: colors.primary,
     letterSpacing: 1,
     fontVariant: ['tabular-nums'],
+  },
+  countdownHint: {
+    marginTop: 6,
+    fontSize: 12,
+    color: colors.inkMuted,
   },
   sectionTitle: {
     fontSize: 17,

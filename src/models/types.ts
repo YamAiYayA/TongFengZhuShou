@@ -19,9 +19,13 @@ export interface UserSettings {
   cutoff_time: string; // HH:mm
   quick_amounts_json: string; // JSON number[]
   notifications_enabled: number; // 0 | 1
+  /** Minutes between auto repeats when user ignores a reminder. */
+  repeat_interval_minutes: number;
   created_at: string;
   updated_at: string;
 }
+
+export const DEFAULT_REPEAT_INTERVAL_MINUTES = 15;
 
 export interface WaterLog {
   id: number;
