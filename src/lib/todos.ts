@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "./db";
+import { enrichTodoInput } from "./schedule";
 import type { CycleConfig, CycleType, Todo, TodoInput, TodoStatus } from "./types";
 
 type TodoRow = {
@@ -21,7 +22,9 @@ function mapRow(row: TodoRow): Todo {
     typeof row.cycle_config === "string"
       ? (JSON.parse(row.cycle_config) as CycleConfig)
       : row.cycle_config ?? {};
-  return { ...row, cycle_config: config };
+  const cycle_type =
+    (row.cycle_type as string) === "custom" ? "interval" : row.cycle_type;
+  return { ...row, cycle_type, cycle_config: config };
 }
 
 export async function listTodos(ownerSub: string): Promise<Todo[]> {
@@ -41,13 +44,14 @@ export async function createTodo(
   input: TodoInput,
 ): Promise<Todo> {
   const id = randomUUID();
-  const title = input.title.trim();
+  const enriched = enrichTodoInput(input);
+  const title = enriched.title.trim();
   if (!title) throw new Error("标题不能为空");
-  const cycleType: CycleType = input.cycle_type ?? "once";
-  const cycleConfig = input.cycle_config ?? {};
-  const dueAt = input.due_at ?? null;
-  const nextAt = input.next_at ?? dueAt;
-  const status: TodoStatus = input.status ?? "open";
+  const cycleType: CycleType = enriched.cycle_type ?? "once";
+  const cycleConfig = enriched.cycle_config ?? {};
+  const dueAt = enriched.due_at ?? null;
+  const nextAt = enriched.next_at ?? dueAt;
+  const status: TodoStatus = enriched.status ?? "open";
 
   await sql(
     `insert into todos (
@@ -57,7 +61,7 @@ export async function createTodo(
       id,
       ownerSub,
       title,
-      (input.notes ?? "").trim(),
+      (enriched.notes ?? "").trim(),
       cycleType,
       JSON.stringify(cycleConfig),
       dueAt,

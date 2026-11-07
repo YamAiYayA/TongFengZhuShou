@@ -1,5 +1,6 @@
 import { requireViewer } from "@/lib/auth";
 import { briefWithDeepSeek } from "@/lib/deepseek";
+import { formatCycleDetail } from "@/lib/schedule";
 import { listTodos } from "@/lib/todos";
 
 export async function POST(request: Request) {
@@ -11,7 +12,7 @@ export async function POST(request: Request) {
   const text = open
     .map(
       (t) =>
-        `- [${t.cycle_type}] ${t.title}${t.next_at ? ` @ ${t.next_at}` : ""}${t.notes ? ` (${t.notes})` : ""}`,
+        `- ${t.title} | ${formatCycleDetail(t)}${t.next_at ? ` | next ${t.next_at}` : ""}`,
     )
     .join("\n");
 

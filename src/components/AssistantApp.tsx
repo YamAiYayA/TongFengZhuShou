@@ -1,14 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  cycleTypeLabel,
+  formatCycleDetail,
+  formatNextAt,
+} from "@/lib/schedule";
 import type { CycleType, Todo } from "@/lib/types";
-
-const CYCLE_LABEL: Record<CycleType, string> = {
-  once: "单次",
-  daily: "每天",
-  weekly: "每周",
-  custom: "自定义",
-};
 
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -40,6 +38,11 @@ export function AssistantApp() {
   const [notes, setNotes] = useState("");
   const [cycleType, setCycleType] = useState<CycleType>("once");
   const [dueLocal, setDueLocal] = useState("");
+  const [intervalMinutes, setIntervalMinutes] = useState("20");
+  const [windowStart, setWindowStart] = useState("09:00");
+  const [windowEnd, setWindowEnd] = useState("23:00");
+  const [goalAmount, setGoalAmount] = useState("");
+  const [goalUnit, setGoalUnit] = useState("L");
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiSummary, setAiSummary] = useState<string | null>(null);
   const [aiMode, setAiMode] = useState<"live" | "sample" | null>(null);
@@ -81,20 +84,27 @@ export function AssistantApp() {
     setError(null);
     try {
       const dueIso = dueLocal ? new Date(dueLocal).toISOString() : null;
+      const cycle_config =
+        cycleType === "daily"
+          ? { time: "09:00" }
+          : cycleType === "weekly"
+            ? { weekday: 1, time: "09:00" }
+            : cycleType === "interval"
+              ? {
+                  intervalMinutes: Number(intervalMinutes) || 20,
+                  windowStart,
+                  windowEnd,
+                  goalAmount: goalAmount ? Number(goalAmount) : undefined,
+                  goalUnit: goalAmount ? goalUnit : undefined,
+                }
+              : {};
       await api("/api/todos", {
         method: "POST",
         body: JSON.stringify({
           title,
           notes,
           cycle_type: cycleType,
-          cycle_config:
-            cycleType === "daily"
-              ? { time: "09:00" }
-              : cycleType === "weekly"
-                ? { weekday: 1, time: "09:00" }
-                : cycleType === "custom"
-                  ? { everyDays: 3, time: "09:00" }
-                  : {},
+          cycle_config,
           due_at: dueIso,
           next_at: dueIso,
         }),
@@ -103,6 +113,7 @@ export function AssistantApp() {
       setNotes("");
       setDueLocal("");
       setCycleType("once");
+      setGoalAmount("");
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "创建失败");
@@ -199,17 +210,23 @@ export function AssistantApp() {
         >
           助理
         </h1>
-        <p className="mt-3 max-w-xl text-[15px] leading-relaxed" style={{ color: "var(--ink-soft)" }}>
-          待办、时间周期，加上 DeepSeek：用自然语言丢进去，自动拆成可循环的事项。
+        <p
+          className="mt-3 max-w-xl text-[15px] leading-relaxed"
+          style={{ color: "var(--ink-soft)" }}
+        >
+          一句话进来，拆成「间隔 / 时间窗 / 目标」的周期待办——不是把整段话塞进一条备注。
         </p>
-        <div className="mt-4 flex flex-wrap items-center gap-3 text-sm" style={{ color: "var(--muted)" }}>
+        <div
+          className="mt-4 flex flex-wrap items-center gap-3 text-sm"
+          style={{ color: "var(--muted)" }}
+        >
           <span>{openCount} 项进行中</span>
           {aiMode === "sample" && (
             <span
               className="rounded px-2 py-0.5 text-xs font-medium"
               style={{ background: "#f4e4c8", color: "var(--warn)" }}
             >
-              示例 AI（待绑定 DeepSeek Key）
+              示例 AI
             </span>
           )}
           {aiMode === "live" && (
@@ -244,7 +261,7 @@ export function AssistantApp() {
           DeepSeek 一句话建待办
         </h2>
         <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
-          例如：每周一上午整理周报；每天 21 点复盘；周五前提交报销。
+          例：上午 9 点到晚上 23 点，每 20 分钟喝水，全天 3L → 一条「喝水」间隔待办。
         </p>
         <textarea
           value={aiPrompt}
@@ -278,7 +295,10 @@ export function AssistantApp() {
           </button>
         </div>
         {aiSummary && (
-          <p className="mt-3 text-sm leading-relaxed" style={{ color: "var(--ink-soft)" }}>
+          <p
+            className="mt-3 text-sm leading-relaxed"
+            style={{ color: "var(--ink-soft)" }}
+          >
             {aiSummary}
           </p>
         )}
@@ -304,14 +324,14 @@ export function AssistantApp() {
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="待办标题"
+            placeholder="待办标题，如：喝水"
             className="w-full rounded-xl border px-3 py-2.5 outline-none"
             style={{ borderColor: "var(--line)" }}
           />
           <textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            placeholder="备注（可选）"
+            placeholder="备注（可选，别把整段计划塞这里）"
             rows={2}
             className="w-full rounded-xl border px-3 py-2.5 outline-none"
             style={{ borderColor: "var(--line)" }}
@@ -328,20 +348,83 @@ export function AssistantApp() {
                 <option value="once">单次</option>
                 <option value="daily">每天</option>
                 <option value="weekly">每周</option>
-                <option value="custom">自定义（每 3 天）</option>
+                <option value="interval">间隔（分钟+时间窗）</option>
               </select>
             </label>
-            <label className="text-sm" style={{ color: "var(--muted)" }}>
-              到期 / 下次
-              <input
-                type="datetime-local"
-                value={dueLocal}
-                onChange={(e) => setDueLocal(e.target.value)}
-                className="mt-1 w-full rounded-xl border px-3 py-2.5 outline-none"
-                style={{ borderColor: "var(--line)", color: "var(--ink)" }}
-              />
-            </label>
+            {cycleType === "once" ? (
+              <label className="text-sm" style={{ color: "var(--muted)" }}>
+                到期 / 下次
+                <input
+                  type="datetime-local"
+                  value={dueLocal}
+                  onChange={(e) => setDueLocal(e.target.value)}
+                  className="mt-1 w-full rounded-xl border px-3 py-2.5 outline-none"
+                  style={{ borderColor: "var(--line)", color: "var(--ink)" }}
+                />
+              </label>
+            ) : (
+              <div />
+            )}
           </div>
+
+          {cycleType === "interval" && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="text-sm" style={{ color: "var(--muted)" }}>
+                间隔（分钟）
+                <input
+                  value={intervalMinutes}
+                  onChange={(e) => setIntervalMinutes(e.target.value)}
+                  inputMode="numeric"
+                  className="mt-1 w-full rounded-xl border px-3 py-2.5 outline-none"
+                  style={{ borderColor: "var(--line)", color: "var(--ink)" }}
+                />
+              </label>
+              <label className="text-sm" style={{ color: "var(--muted)" }}>
+                目标量（可选）
+                <div className="mt-1 flex gap-2">
+                  <input
+                    value={goalAmount}
+                    onChange={(e) => setGoalAmount(e.target.value)}
+                    placeholder="3"
+                    inputMode="decimal"
+                    className="w-full rounded-xl border px-3 py-2.5 outline-none"
+                    style={{ borderColor: "var(--line)", color: "var(--ink)" }}
+                  />
+                  <select
+                    value={goalUnit}
+                    onChange={(e) => setGoalUnit(e.target.value)}
+                    className="rounded-xl border px-2 outline-none"
+                    style={{ borderColor: "var(--line)", color: "var(--ink)" }}
+                  >
+                    <option value="L">L</option>
+                    <option value="ml">ml</option>
+                    <option value="次">次</option>
+                  </select>
+                </div>
+              </label>
+              <label className="text-sm" style={{ color: "var(--muted)" }}>
+                开始
+                <input
+                  type="time"
+                  value={windowStart}
+                  onChange={(e) => setWindowStart(e.target.value)}
+                  className="mt-1 w-full rounded-xl border px-3 py-2.5 outline-none"
+                  style={{ borderColor: "var(--line)", color: "var(--ink)" }}
+                />
+              </label>
+              <label className="text-sm" style={{ color: "var(--muted)" }}>
+                结束
+                <input
+                  type="time"
+                  value={windowEnd}
+                  onChange={(e) => setWindowEnd(e.target.value)}
+                  className="mt-1 w-full rounded-xl border px-3 py-2.5 outline-none"
+                  style={{ borderColor: "var(--line)", color: "var(--ink)" }}
+                />
+              </label>
+            </div>
+          )}
+
           <button
             type="button"
             disabled={busy || !title.trim()}
@@ -363,83 +446,99 @@ export function AssistantApp() {
             className="rounded-2xl px-5 py-10 text-center"
             style={{ border: "1px dashed var(--line)", color: "var(--muted)" }}
           >
-            还没有待办。先用上面的 AI 输入一句话试试。
+            还没有待办。试一句：「9点到23点，每20分钟喝水，全天3L」
           </div>
         ) : (
           <ul className="grid gap-3">
-            {todos.map((todo) => (
-              <li
-                key={todo.id}
-                className="rounded-2xl px-4 py-4"
-                style={{
-                  background: "var(--panel)",
-                  border: "1px solid var(--line)",
-                  opacity: todo.status === "done" ? 0.62 : 1,
-                }}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3
-                        className="text-base font-semibold"
-                        style={{
-                          textDecoration:
-                            todo.status === "done" ? "line-through" : "none",
-                        }}
+            {todos.map((todo) => {
+              const detail = formatCycleDetail(todo);
+              const next = formatNextAt(todo.next_at);
+              return (
+                <li
+                  key={todo.id}
+                  className="rounded-2xl px-4 py-4"
+                  style={{
+                    background: "var(--panel)",
+                    border: "1px solid var(--line)",
+                    opacity: todo.status === "done" ? 0.62 : 1,
+                  }}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3
+                          className="text-base font-semibold"
+                          style={{
+                            textDecoration:
+                              todo.status === "done" ? "line-through" : "none",
+                          }}
+                        >
+                          {todo.title}
+                        </h3>
+                        <span
+                          className="rounded-full px-2 py-0.5 text-[11px] font-medium"
+                          style={{
+                            background: "var(--leaf)",
+                            color: "var(--moss-deep)",
+                          }}
+                        >
+                          {cycleTypeLabel(todo.cycle_type)}
+                        </span>
+                      </div>
+                      <p
+                        className="mt-1 text-sm font-medium"
+                        style={{ color: "var(--moss-deep)" }}
                       >
-                        {todo.title}
-                      </h3>
-                      <span
-                        className="rounded-full px-2 py-0.5 text-[11px] font-medium"
-                        style={{
-                          background: "var(--leaf)",
-                          color: "var(--moss-deep)",
-                        }}
-                      >
-                        {CYCLE_LABEL[todo.cycle_type]}
-                      </span>
+                        {detail}
+                      </p>
+                      {todo.notes ? (
+                        <p
+                          className="mt-1 text-sm"
+                          style={{ color: "var(--muted)" }}
+                        >
+                          {todo.notes}
+                        </p>
+                      ) : null}
+                      {next && (
+                        <p
+                          className="mt-1 text-xs"
+                          style={{ color: "var(--muted)" }}
+                        >
+                          下次提醒：{next}
+                        </p>
+                      )}
                     </div>
-                    {todo.notes ? (
-                      <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
-                        {todo.notes}
-                      </p>
-                    ) : null}
-                    {(todo.next_at || todo.due_at) && (
-                      <p className="mt-1 text-xs" style={{ color: "var(--muted)" }}>
-                        下次：
-                        {new Date(todo.next_at || todo.due_at || "").toLocaleString(
-                          "zh-CN",
-                        )}
-                      </p>
-                    )}
+                    <div className="flex shrink-0 gap-2">
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void onToggleDone(todo)}
+                        className="rounded-lg px-2.5 py-1.5 text-xs font-semibold"
+                        style={{
+                          background:
+                            todo.status === "done" ? "#eef2ef" : "var(--moss)",
+                          color: todo.status === "done" ? "var(--ink)" : "#fff",
+                        }}
+                      >
+                        {todo.status === "done" ? "恢复" : "完成"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void onDelete(todo.id)}
+                        className="rounded-lg px-2.5 py-1.5 text-xs font-semibold"
+                        style={{
+                          background: "#f6eaea",
+                          color: "var(--danger)",
+                        }}
+                      >
+                        删除
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex shrink-0 gap-2">
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => void onToggleDone(todo)}
-                      className="rounded-lg px-2.5 py-1.5 text-xs font-semibold"
-                      style={{
-                        background:
-                          todo.status === "done" ? "#eef2ef" : "var(--moss)",
-                        color: todo.status === "done" ? "var(--ink)" : "#fff",
-                      }}
-                    >
-                      {todo.status === "done" ? "恢复" : "完成"}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => void onDelete(todo.id)}
-                      className="rounded-lg px-2.5 py-1.5 text-xs font-semibold"
-                      style={{ background: "#f6eaea", color: "var(--danger)" }}
-                    >
-                      删除
-                    </button>
-                  </div>
-                </div>
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>
