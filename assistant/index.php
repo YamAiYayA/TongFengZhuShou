@@ -115,7 +115,7 @@
 <body>
 <main>
   <h1>助理</h1>
-  <p class="sub">你说话，助理改数据库：建任务、改时间、改目标、记进度、排序、删除——人尽量少点按钮。</p>
+  <p class="sub">人说话 → 助理改库 + 改页面。要折线图/报表，直接说，他生成网页链接给你打开。</p>
   <div id="msg" class="ok">加载中…</div>
   <div id="err" class="err" style="display:none"></div>
 
@@ -124,7 +124,8 @@
     <p class="hint">
       例1：9点到23点，每20分钟喝水，全天3L<br/>
       例2：现在12点了，已经喝了500ml<br/>
-      例3：把喝水间隔改成30分钟 / 目标改成2.5L / 按紧急程度排个序
+      例3：把喝水间隔改成30分钟 / 目标改成2.5L<br/>
+      例4：给我看喝水进度折线图
     </p>
     <textarea id="aiPrompt" placeholder="用自然语言说目标和进度…"></textarea>
     <button id="aiBtn" type="button">发送给助理</button>
@@ -142,6 +143,11 @@
   <section>
     <strong>进行中的目标</strong>
     <div id="list" style="margin-top:10px"></div>
+  </section>
+
+  <section style="margin-top:18px">
+    <strong>助理生成的页面</strong>
+    <div id="pageList" style="margin-top:10px"></div>
   </section>
 </main>
 <script>
@@ -229,6 +235,22 @@ async function refresh(){
     ? ` · 参考 ${data.ref_time}（测试）`
     : ` · ${data.server_time||''}`;
   msgEl.textContent = '已连接 · deepseek-flash · 思考开 · '+data.todos.length+' 条' + clockNote;
+  const pageListEl = document.getElementById('pageList');
+  const pages = Array.isArray(data.pages) ? data.pages : [];
+  if(pageListEl){
+    pageListEl.innerHTML = pages.length ? pages.map(p => `
+      <div class="card" style="padding:12px 14px">
+        <div class="item">
+          <div>
+            <strong>${escapeHtml(p.title||p.slug)}</strong>
+            <span class="tag">${escapeHtml(p.kind||'page')}</span>
+            <div class="hint" style="margin:4px 0 0">${escapeHtml(p.slug||'')}</div>
+          </div>
+          <a class="tiny" style="display:inline-block;background:var(--moss);color:#fff;text-decoration:none;padding:6px 10px;border-radius:12px;font-size:12px;font-weight:700"
+             href="${escapeHtml(p.url)}" target="_blank" rel="noopener">打开</a>
+        </div>
+      </div>`).join('') : '<div class="card" style="color:#6b786f">还没有页面。可以说「给我看喝水进度折线图」。</div>';
+  }
   const goals = data.todos.filter(t => t.status==='open');
   if(!goals.length){
     listEl.innerHTML = '<div class="card" style="color:#6b786f">还没有目标。先丢一句给上面的助理。</div>';
@@ -371,12 +393,9 @@ document.getElementById('aiBtn').onclick = async () => {
     }
     if(result && result.messages) renderChat(result.messages);
     else await loadChat();
-    // 若本轮结果已带更新后的 todo，先直接渲染，避免刷新用错时钟
-    if(result && Array.isArray(result.todos) && result.todos.length){
-      const openTodos = result.todos.filter(t => (t.status||'open')==='open');
-      if(openTodos.length){
-        // fall through to refresh which uses remembered logical now
-      }
+    if(result && Array.isArray(result.page_urls) && result.page_urls.length){
+      aiSummary.textContent = (result.summary || aiSummary.textContent || '') +
+        '\n打开：' + result.page_urls.join('\n');
     }
     await refresh();
   }catch(e){

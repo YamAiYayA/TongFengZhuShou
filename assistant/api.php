@@ -6,6 +6,7 @@ if (function_exists('opcache_invalidate')) {
 }
 require __DIR__ . '/db.php';
 require __DIR__ . '/goal.php';
+require __DIR__ . '/pages.php';
 require __DIR__ . '/assistant_ai.php';
 require __DIR__ . '/secretary.php';
 
@@ -99,6 +100,9 @@ function apply_progress(PDO $pdo, array $todo, array $progress, ?int $nowOverrid
   $enriched = enrich_todo_row($todo, $nowOverrideMin);
   $pdo->prepare("UPDATE todos SET per_interval_amount=? WHERE id=?")
     ->execute([$enriched['calc']['per_interval_amount'], $todo['id']]);
+  if (function_exists('refresh_bound_chart_pages')) {
+    refresh_bound_chart_pages($pdo, (int)$todo['id']);
+  }
   $todo = $pdo->query("SELECT * FROM todos WHERE id = " . (int)$todo['id'])->fetch();
   return enrich_todo_row($todo, $nowOverrideMin);
 }
@@ -229,8 +233,20 @@ try {
     $ref = $nowOverride !== null
       ? sprintf('%02d:%02d', intdiv($nowOverride, 60), $nowOverride % 60)
       : (new DateTimeImmutable('now'))->format('H:i');
+    ensure_pages_schema($pdo);
+    $pageRows = list_pages($pdo);
+    $pagesOut = array_map(function ($p) {
+      return [
+        'slug' => $p['slug'],
+        'title' => $p['title'],
+        'kind' => $p['kind'],
+        'url' => page_public_url($p['slug']),
+        'updated_at' => $p['updated_at'] ?? null,
+      ];
+    }, $pageRows);
     json_out([
       'todos' => $rows,
+      'pages' => $pagesOut,
       'server_time' => (new DateTimeImmutable('now'))->format('H:i'),
       'ref_time' => $ref,
       'logical_now' => get_logical_now_minutes($pdo),
@@ -260,6 +276,8 @@ try {
     try {
       $open = load_open_todos($pdo);
       $history = load_chat_history($pdo, 12);
+      ensure_pages_schema($pdo);
+      $pages = list_pages($pdo);
       save_chat_message($pdo, 'user', $prompt, null);
       sse_send(['type' => 'start', 'model' => 'deepseek-flash', 'thinking' => true]);
       $understood = assistant_understand_stream(
@@ -271,7 +289,8 @@ try {
         function (string $delta) {
           sse_send(['type' => 'thinking', 'text' => $delta]);
         },
-        $history
+        $history,
+        $pages
       );
       $result = apply_understood($pdo, $understood, $open, $prompt);
       $reply = (string)($result['summary'] ?? '');
@@ -291,8 +310,10 @@ try {
     $prompt = trim((string)($body['prompt'] ?? ''));
     $open = load_open_todos($pdo);
     $history = load_chat_history($pdo, 12);
+    ensure_pages_schema($pdo);
+    $pages = list_pages($pdo);
     save_chat_message($pdo, 'user', $prompt, null);
-    $understood = assistant_understand_stream($prompt, $open, function ($delta) {}, null, $history);
+    $understood = assistant_understand_stream($prompt, $open, function ($delta) {}, null, $history, $pages);
     $result = apply_understood($pdo, $understood, $open, $prompt);
     save_chat_message($pdo, 'assistant', (string)($result['summary'] ?? ''), $result['intent'] ?? null);
     $result['messages'] = load_chat_history($pdo, 40);

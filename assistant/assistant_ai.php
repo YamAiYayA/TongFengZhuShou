@@ -224,8 +224,8 @@ function history_as_messages(array $history): array {
   return $out;
 }
 
-function build_assistant_messages(string $prompt, array $openTodos, array $history = []): array {
-  // 全量待办给秘书看：人只说话，增删改查全靠 actions
+function build_assistant_messages(string $prompt, array $openTodos, array $history = [], array $pages = []): array {
+  // 全量待办 + 页面：人只说话，数据与页面增删改查全靠 actions
   $todoBrief = [];
   foreach ($openTodos as $t) {
     $row = [
@@ -248,28 +248,27 @@ function build_assistant_messages(string $prompt, array $openTodos, array $histo
     $todoBrief[] = $row;
   }
 
-  $system = "你是用户的私人秘书。架构是：人 ↔ 你 ↔ 数据库。\n"
-    . "人几乎不点按钮；一切增删改查、排序、调时间、调目标、记进度，都由你通过 actions 改数据库完成。\n"
+  $system = "你是用户的私人秘书。架构：人 ↔ 你 ↔（数据库 + 页面）。\n"
+    . "人几乎只说话。你有两种权限：\n"
+    . "A) 对 todos 数据完全增删改查；B) 对展示页面完全增删改查（折线图/报表/说明页）。\n"
+    . "用户要看图或报表时：你 upsert_page 生成网页，在 summary 里给出打开链接（服务端会回真实 URL）。\n"
     . "只输出 JSON。intent 只能是 chat 或 act。\n"
-    . "chat（不改库）: {\"intent\":\"chat\",\"summary\":\"……\",\"actions\":[]}\n"
-    . "act（改库）: {\"intent\":\"act\",\"summary\":\"一句话确认\",\"actions\":[...]} \n"
-    . "允许的 op：\n"
-    . "- create: {\"op\":\"create\",\"todo\":{title,notes,cycle_type,interval_minutes,window_start,window_end,goal_amount,goal_unit,progress_amount}}\n"
-    . "- update: {\"op\":\"update\",\"id\":数字,\"fields\":{可改字段任意子集}}\n"
-    . "- delete: {\"op\":\"delete\",\"id\":数字}\n"
-    . "- complete / reopen / archive: {\"op\":\"complete|reopen|archive\",\"id\":数字}\n"
-    . "- set_progress: {\"op\":\"set_progress\",\"id\":数字,\"amount\":数,\"unit\":\"ml|L\",\"mode\":\"set_progress|add_progress|set_remaining\"}\n"
-    . "- reorder: {\"op\":\"reorder\",\"ids\":[按新顺序的id...]}\n"
-    . "可改字段：title,notes,cycle_type,interval_minutes,window_start,window_end,goal_amount,goal_unit,progress_amount,status,sort_order。\n"
+    . "chat: {\"intent\":\"chat\",\"summary\":\"……\",\"actions\":[]}\n"
+    . "act: {\"intent\":\"act\",\"summary\":\"一句话确认\",\"actions\":[...]}\n"
+    . "数据 op：create / update / delete / complete / reopen / archive / set_progress / reorder\n"
+    . "页面 op：\n"
+    . "- upsert_page: {\"op\":\"upsert_page\",\"slug\":\"water-progress\",\"title\":\"喝水进度\",\"kind\":\"chart_line\",\"spec\":{\"todo_id\":15}}\n"
+    . "- upsert_page(html): {\"op\":\"upsert_page\",\"slug\":\"note-1\",\"title\":\"说明\",\"kind\":\"html\",\"html\":\"<p>...</p>\"}\n"
+    . "- delete_page: {\"op\":\"delete_page\",\"slug\":\"...\"}\n"
+    . "- list_pages: {\"op\":\"list_pages\"}\n"
     . "铁律：\n"
-    . "1) 禁止嘴上说已改却不给 actions；summary 必须对应真实 actions。\n"
-    . "2) 你好/测试/闲聊 → chat，禁止 invent 新任务。\n"
-    . "3) 新建周期目标必须用户说清了间隔+时间窗+总量；数字只能来自用户原话。\n"
-    . "4) 已有任务：用户说改间隔/改时间/改总量/排序/删除/完成 → 必须 act，对着现有 id 改。\n"
-    . "5) 用户说「现在X点」（哪怕测试、与真实时间不符）→ 按该时刻算；此前时间点视为已过。\n"
-    . "6) 说已喝/进度 → set_progress；不要新建一条任务。\n"
-    . "7) 结合对话历史；上一轮问了，这句就是在答。\n"
-    . "8) summary 用自然中文对用户说，不要念 JSON。";
+    . "1) 禁止嘴上说已改/已生成却不给 actions。\n"
+    . "2) 闲聊 → chat；不要 invent 任务。\n"
+    . "3) 新建周期目标必须用户说清间隔+时间窗+总量。\n"
+    . "4) 改已有任务/排序/进度 → act。\n"
+    . "5) 「现在X点」按该时刻算，此前时段已过。\n"
+    . "6) 要折线图/页面/可视化 → upsert_page（kind=chart_line），不要只在聊天里画 ASCII。\n"
+    . "7) summary 自然中文；页面类一定提示用户去打开链接。";
 
   $histText = '';
   foreach ($history as $h) {
@@ -278,9 +277,19 @@ function build_assistant_messages(string $prompt, array $openTodos, array $histo
   }
   if ($histText === '') $histText = '（暂无）\n';
 
+  $pageBrief = [];
+  foreach ($pages as $p) {
+    $pageBrief[] = [
+      'slug' => $p['slug'] ?? '',
+      'title' => $p['title'] ?? '',
+      'kind' => $p['kind'] ?? '',
+    ];
+  }
+
   $user = "对话历史（从旧到新）：\n" . $histText
     . "\n用户本轮说：\n" . $prompt
-    . "\n\n数据库里当前任务（你可任意增删改查）：\n" . json_encode($todoBrief, JSON_UNESCAPED_UNICODE);
+    . "\n\n数据库任务（可增删改查）：\n" . json_encode($todoBrief, JSON_UNESCAPED_UNICODE)
+    . "\n\n已有页面（可增删改查）：\n" . json_encode($pageBrief, JSON_UNESCAPED_UNICODE);
 
   $messages = [
     ['role' => 'system', 'content' => $system],
@@ -324,12 +333,12 @@ function assistant_fallback(string $prompt): array {
 /**
  * Stream-aware understand: calls $onDelta for each token, returns parsed intent array.
  */
-function assistant_understand_stream(string $prompt, array $openTodos, callable $onDelta, ?callable $onThinking = null, array $history = []): array {
+function assistant_understand_stream(string $prompt, array $openTodos, callable $onDelta, ?callable $onThinking = null, array $history = [], array $pages = []): array {
   $prompt = trim($prompt);
   if ($prompt === '') throw new InvalidArgumentException('请输入内容');
   if (mb_strlen($prompt) > 2000) throw new InvalidArgumentException('内容过长');
 
-  $messages = build_assistant_messages($prompt, $openTodos, $history);
+  $messages = build_assistant_messages($prompt, $openTodos, $history, $pages);
   try {
     $content = deepseek_chat_stream($messages, $onDelta, 0.1, $onThinking);
     $parsed = extract_json_object($content);

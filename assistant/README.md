@@ -1,14 +1,13 @@
-# 私人秘书助理（人 ↔ AI ↔ 数据库）
+# 私人秘书助理：人 ↔ AI ↔（数据库 + 页面）
 
-人只负责说话；助理通过 `actions` 对 `todos` 做增删改查、排序、改时间窗/间隔/目标、记进度。
+## 两种权限
+1. **数据 CRUD**：todos 增删改查、排序、改间隔/时间窗/目标、记进度  
+2. **页面 CRUD**：生成/更新/删除展示页（折线图、报表、说明页），返回 URL 给人打开
 
-线上目录：宝塔站点 `api.guoziai.com/assistant`（FTP 部署 PHP）。
+## 页面
+- 入口：`page.php?slug=water-progress`
+- 操作：`upsert_page` / `delete_page` / `list_pages`
+- 图表页在进度更新后自动刷新绑定数据
 
-## 能力
-- `create` / `update` / `delete` / `complete` / `reopen` / `archive`
-- `set_progress`（含逻辑时钟「现在12点」测试）
-- `reorder`
-- 服务端启发式兜底：模型只聊天不给 actions 时，仍按中文指令落库
-
-## 本地配置
-用环境变量或改 `config.php`：`ASSISTANT_DB_*`、`DEEPSEEK_API_KEY`。
+## 线上
+宝塔 `api.guoziai.com/assistant`（FTP 部署）

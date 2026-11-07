@@ -111,8 +111,9 @@ function reorder_todos(PDO $pdo, array $ids): void {
 
 /**
  * Execute one secretary action. Returns human note fragment or null.
+ * Optional &$meta collects page_urls etc.
  */
-function execute_secretary_action(PDO $pdo, array $action, array &$open, ?int $nowOverride, string $prompt): ?string {
+function execute_secretary_action(PDO $pdo, array $action, array &$open, ?int $nowOverride, string $prompt, array &$meta = []): ?string {
   $op = strtolower(trim((string)($action['op'] ?? $action['action'] ?? '')));
   if ($op === '') return null;
 
@@ -209,6 +210,47 @@ function execute_secretary_action(PDO $pdo, array $action, array &$open, ?int $n
     reorder_todos($pdo, $ids);
     $open = load_open_todos($pdo);
     return '已按你的要求重新排序';
+  }
+
+  // —— 页面 CRUD：助理生成/改网页，人打开链接查看 ——
+  if ($op === 'upsert_page' || $op === 'create_page' || $op === 'update_page' || $op === 'make_page') {
+    [$row, $url] = upsert_page($pdo, $action, $open);
+    $meta['page_urls'][] = $url;
+    $meta['pages'][] = [
+      'slug' => $row['slug'] ?? null,
+      'title' => $row['title'] ?? null,
+      'kind' => $row['kind'] ?? null,
+      'url' => $url,
+    ];
+    $title = $row['title'] ?? '页面';
+    return "已生成页面「{$title}」→ {$url}";
+  }
+
+  if ($op === 'delete_page') {
+    $slug = sanitize_page_slug((string)($action['slug'] ?? ''));
+    if ($slug === '' || !delete_page_by_slug($pdo, $slug)) {
+      throw new RuntimeException('要删哪个页面？请给 slug');
+    }
+    return '已删除页面 ' . $slug;
+  }
+
+  if ($op === 'list_pages') {
+    $pages = list_pages($pdo);
+    $meta['pages'] = array_map(function ($p) {
+      $url = page_public_url($p['slug']);
+      return [
+        'slug' => $p['slug'],
+        'title' => $p['title'],
+        'kind' => $p['kind'],
+        'url' => $url,
+      ];
+    }, $pages);
+    if (!$pages) return '目前还没有页面';
+    $bits = [];
+    foreach ($meta['pages'] as $p) {
+      $bits[] = $p['title'] . ' → ' . $p['url'];
+    }
+    return '现有页面：' . implode('；', $bits);
   }
 
   if ($op === 'noop' || $op === 'none') {
@@ -376,6 +418,42 @@ function heuristic_secretary_actions(string $prompt, array $open): array {
     }
   }
 
+  // page: 折线图 / 生成页面 / 给我看网页
+  if (preg_match('/折线图|曲线图|进度图|可视化|生成(?:一个)?页面|做(?:一个)?页面|给我看|打开页面|报表/u', $prompt)) {
+    $slug = 'progress-chart';
+    $title = '进度折线图';
+    $hint = '水';
+    if (preg_match('/喝水|饮水|补水/u', $prompt)) {
+      $slug = 'water-progress';
+      $title = '喝水进度折线图';
+      $hint = '水';
+    }
+    $todoId = 0;
+    foreach ($open as $t) {
+      if (mb_strpos((string)$t['title'], $hint) !== false) { $todoId = (int)$t['id']; break; }
+    }
+    if (!$todoId) {
+      foreach ($open as $t) {
+        if (($t['cycle_type'] ?? '') === 'interval') { $todoId = (int)$t['id']; break; }
+      }
+    }
+    $actions[] = [
+      'op' => 'upsert_page',
+      'slug' => $slug,
+      'title' => $title,
+      'kind' => 'chart_line',
+      'spec' => [
+        'todo_id' => $todoId ?: null,
+        'todo_title_hint' => $hint,
+        'title' => $title,
+      ],
+    ];
+  }
+
+  if (preg_match('/(?:删掉|删除)\s*(?:这个|那个)?页面/u', $prompt) && preg_match('/slug[=：:\s]+([a-z0-9\-_]+)/i', $prompt, $m)) {
+    $actions[] = ['op' => 'delete_page', 'slug' => $m[1]];
+  }
+
   return $actions;
 }
 
@@ -487,8 +565,9 @@ function apply_secretary(PDO $pdo, array $understood, array $open, string $promp
   }
 
   $notes = [];
+  $meta = ['page_urls' => [], 'pages' => []];
   foreach ($filtered as $a) {
-    $note = execute_secretary_action($pdo, $a, $open, $nowOverride, $prompt);
+    $note = execute_secretary_action($pdo, $a, $open, $nowOverride, $prompt, $meta);
     if ($note) $notes[] = $note;
   }
 
@@ -506,7 +585,10 @@ function apply_secretary(PDO $pdo, array $understood, array $open, string $promp
   // Append water/interval calc only when this turn touched progress or schedule fields
   $touchedSchedule = false;
   foreach ($notes as $n) {
-    if (preg_match('/进度|interval|window|goal_amount|goal_unit|隐藏/u', $n)) { $touchedSchedule = true; break; }
+    if (preg_match('/已记进度|interval_minutes|window_start|window_end|goal_amount|goal_unit|已隐藏/u', $n)) {
+      $touchedSchedule = true;
+      break;
+    }
   }
   if ($touchedSchedule || user_stated_progress($prompt) || parse_user_now_minutes($prompt) !== null) {
     foreach ($todos as $t) {
@@ -536,6 +618,8 @@ function apply_secretary(PDO $pdo, array $understood, array $open, string $promp
     'summary' => $summary,
     'todos' => $todos,
     'actions_applied' => $notes,
+    'pages' => $meta['pages'] ?? [],
+    'page_urls' => $meta['page_urls'] ?? [],
     'ref_time' => $nowOverride !== null ? sprintf('%02d:%02d', intdiv($nowOverride, 60), $nowOverride % 60) : null,
   ];
 }
