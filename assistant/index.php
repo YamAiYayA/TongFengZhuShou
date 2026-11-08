@@ -110,6 +110,28 @@
     .bubble.assistant { align-self:flex-start; background:#f4f8f5; color:#152018; border:1px solid var(--line); border-bottom-left-radius:4px; }
     .chat-tools { margin-top:8px; }
     .chat-tools button { background:#eef2ef; color:#314038; font-size:12px; padding:6px 10px; }
+
+    .fold { margin-bottom:12px; border:1px solid var(--line); border-radius:16px; background:var(--panel); overflow:hidden; }
+    .fold-hd {
+      width:100%; display:flex; align-items:center; gap:10px; justify-content:space-between;
+      padding:14px 16px; margin:0; background:transparent; color:var(--ink);
+      border:none; border-radius:0; font-weight:700; text-align:left; cursor:pointer;
+    }
+    .fold-hd:hover { background:#f7faf7; }
+    .fold-hd .fold-left { display:flex; align-items:center; gap:8px; min-width:0; }
+    .fold-hd .chev {
+      display:inline-block; width:1em; color:var(--muted); transition:transform .18s ease;
+      transform:rotate(-90deg); font-size:12px;
+    }
+    .fold.open > .fold-hd .chev { transform:rotate(0deg); }
+    .fold-meta { color:var(--muted); font-size:12px; font-weight:600; white-space:nowrap; }
+    .fold-bd { display:none; padding:0 16px 16px; border-top:1px solid var(--line); }
+    .fold.open > .fold-bd { display:block; padding-top:14px; }
+    .fold.cardish > .fold-bd { background:transparent; }
+    .fold-nested { margin-top:10px; border:1px dashed #c5d0c8; border-radius:12px; background:#f7faf7; }
+    .fold-nested > .fold-hd { padding:10px 12px; font-size:13px; background:transparent; }
+    .fold-nested > .fold-bd { padding:0 12px 12px; border-top:1px dashed #c5d0c8; }
+    .hint-examples { margin:0 0 10px; }
   </style>
 </head>
 <body>
@@ -119,41 +141,78 @@
   <div id="msg" class="ok">加载中…</div>
   <div id="err" class="err" style="display:none"></div>
 
-  <section class="card">
-    <strong>跟助理说</strong>
-    <p class="hint">
-      例1：9点到23点，每20分钟喝水，全天3L<br/>
-      例2：现在12点了，已经喝了500ml<br/>
-      例3：把喝水间隔改成30分钟 / 目标改成2.5L<br/>
-      例4：给我看喝水进度折线图<br/>
-      例5：加一条强提醒：说话简洁，改库必须给 actions
-    </p>
-    <textarea id="aiPrompt" placeholder="用自然语言说目标和进度…"></textarea>
-    <button id="aiBtn" type="button">发送给助理</button>
-    <div class="model">模型：deepseek-flash · 思考模式开启 · 流式输出</div>
+  <section class="fold open" data-fold="chat">
+    <button type="button" class="fold-hd" aria-expanded="true">
+      <span class="fold-left"><span class="chev">▾</span><span>跟助理说</span></span>
+      <span class="fold-meta">对话</span>
+    </button>
+    <div class="fold-bd">
+      <div class="fold fold-nested" data-fold="examples">
+        <button type="button" class="fold-hd" aria-expanded="false">
+          <span class="fold-left"><span class="chev">▾</span><span>示例说法</span></span>
+          <span class="fold-meta">5 条</span>
+        </button>
+        <div class="fold-bd">
+          <p class="hint hint-examples">
+            例1：9点到23点，每20分钟喝水，全天3L<br/>
+            例2：现在12点了，已经喝了500ml<br/>
+            例3：把喝水间隔改成30分钟 / 目标改成2.5L<br/>
+            例4：给我看喝水进度折线图<br/>
+            例5：加一条强提醒：说话简洁，改库必须给 actions
+          </p>
+        </div>
+      </div>
+      <textarea id="aiPrompt" placeholder="用自然语言说目标和进度…"></textarea>
+      <button id="aiBtn" type="button">发送给助理</button>
+      <div class="model">模型：deepseek-flash · 思考模式开启 · 流式输出</div>
 
-    <div id="chatLog" class="chat-log"></div>
-    <div class="chat-tools"><button id="clearChatBtn" type="button">清空对话</button></div>
-    <div id="thinkBox" class="think-box">
-      <div class="think-title"><span>思考过程</span><span id="thinkStatus">进行中</span></div>
-      <div id="thinkBody" class="think-body"></div>
+      <div class="fold fold-nested open" data-fold="history" style="margin-top:12px">
+        <button type="button" class="fold-hd" aria-expanded="true">
+          <span class="fold-left"><span class="chev">▾</span><span>对话记录</span></span>
+          <span class="fold-meta" id="chatCountMeta">0</span>
+        </button>
+        <div class="fold-bd">
+          <div id="chatLog" class="chat-log"></div>
+          <div class="chat-tools"><button id="clearChatBtn" type="button">清空对话</button></div>
+        </div>
+      </div>
+
+      <div id="thinkBox" class="think-box">
+        <div class="think-title"><span>思考过程</span><span id="thinkStatus">进行中</span></div>
+        <div id="thinkBody" class="think-body"></div>
+      </div>
+      <div id="aiSummary" class="summary"></div>
     </div>
-    <div id="aiSummary" class="summary"></div>
   </section>
 
-  <section>
-    <strong>进行中的目标</strong>
-    <div id="list" style="margin-top:10px"></div>
+  <section class="fold open" data-fold="goals">
+    <button type="button" class="fold-hd" aria-expanded="true">
+      <span class="fold-left"><span class="chev">▾</span><span>进行中的目标</span></span>
+      <span class="fold-meta" id="goalCountMeta">0</span>
+    </button>
+    <div class="fold-bd">
+      <div id="list"></div>
+    </div>
   </section>
 
-  <section style="margin-top:18px">
-    <strong>强提醒（DeepSeek 每次必读）</strong>
-    <div id="reminderList" style="margin-top:10px"></div>
+  <section class="fold" data-fold="reminders">
+    <button type="button" class="fold-hd" aria-expanded="false">
+      <span class="fold-left"><span class="chev">▾</span><span>强提醒</span></span>
+      <span class="fold-meta" id="reminderCountMeta">0</span>
+    </button>
+    <div class="fold-bd">
+      <div id="reminderList"></div>
+    </div>
   </section>
 
-  <section style="margin-top:18px">
-    <strong>助理生成的页面</strong>
-    <div id="pageList" style="margin-top:10px"></div>
+  <section class="fold" data-fold="pages">
+    <button type="button" class="fold-hd" aria-expanded="false">
+      <span class="fold-left"><span class="chev">▾</span><span>助理生成的页面</span></span>
+      <span class="fold-meta" id="pageCountMeta">0</span>
+    </button>
+    <div class="fold-bd">
+      <div id="pageList"></div>
+    </div>
   </section>
 </main>
 <script>
@@ -167,6 +226,45 @@ const thinkStatus = document.getElementById('thinkStatus');
 
 function showErr(t){ errEl.style.display='block'; errEl.textContent=t; }
 function clearErr(){ errEl.style.display='none'; errEl.textContent=''; }
+
+const FOLD_KEY = 'assistant_fold_state_v1';
+const FOLD_DEFAULTS = { chat:true, examples:false, history:true, goals:true, reminders:false, pages:false };
+
+function loadFoldState(){
+  try {
+    const raw = localStorage.getItem(FOLD_KEY);
+    if(!raw) return {...FOLD_DEFAULTS};
+    return Object.assign({}, FOLD_DEFAULTS, JSON.parse(raw));
+  } catch(e){ return {...FOLD_DEFAULTS}; }
+}
+function saveFoldState(state){
+  try { localStorage.setItem(FOLD_KEY, JSON.stringify(state)); } catch(e){}
+}
+function applyFoldState(){
+  const state = loadFoldState();
+  document.querySelectorAll('[data-fold]').forEach(el => {
+    const key = el.getAttribute('data-fold');
+    const open = !!state[key];
+    el.classList.toggle('open', open);
+    const hd = el.querySelector(':scope > .fold-hd');
+    if(hd) hd.setAttribute('aria-expanded', open ? 'true' : 'false');
+  });
+}
+function initFolds(){
+  applyFoldState();
+  document.querySelectorAll('[data-fold] > .fold-hd').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const fold = btn.parentElement;
+      const key = fold.getAttribute('data-fold');
+      const next = !fold.classList.contains('open');
+      fold.classList.toggle('open', next);
+      btn.setAttribute('aria-expanded', next ? 'true' : 'false');
+      const state = loadFoldState();
+      state[key] = next;
+      saveFoldState(state);
+    });
+  });
+}
 
 function detail(t){
   if(t.cycle_type==='interval'){
@@ -197,6 +295,8 @@ function renderChat(messages){
   const box = document.getElementById('chatLog');
   if(!box) return;
   const list = Array.isArray(messages) ? messages : [];
+  const meta = document.getElementById('chatCountMeta');
+  if(meta) meta.textContent = list.length ? (list.length + ' 条') : '空';
   if(!list.length){
     box.innerHTML = '<div class="hint">还没有对话。先说一句，我会记住上下文。</div>';
     return;
@@ -243,21 +343,25 @@ async function refresh(){
   msgEl.textContent = '已连接 · deepseek-flash · 思考开 · '+data.todos.length+' 条' + clockNote;
   const reminderListEl = document.getElementById('reminderList');
   const reminders = Array.isArray(data.reminders) ? data.reminders : [];
+  const enabledReminders = reminders.filter(r => r.enabled !== false);
+  const remMeta = document.getElementById('reminderCountMeta');
+  if(remMeta) remMeta.textContent = enabledReminders.length ? (enabledReminders.length + ' 条') : '空';
   if(reminderListEl){
-    const enabled = reminders.filter(r => r.enabled !== false);
-    reminderListEl.innerHTML = enabled.length ? enabled.map((r,i) => `
-      <div class="card" style="padding:12px 14px">
+    reminderListEl.innerHTML = enabledReminders.length ? enabledReminders.map((r,i) => `
+      <div class="card" style="padding:12px 14px;margin-bottom:10px">
         <div><span class="tag">强提醒 ${r.sort_no || (i+1)}</span>
           ${r.title ? `<strong style="margin-left:6px">${escapeHtml(r.title)}</strong>` : ''}
         </div>
         <div class="hint" style="margin-top:6px;white-space:pre-wrap;color:var(--ink)">${escapeHtml(r.content||'')}</div>
-      </div>`).join('') : '<div class="card" style="color:#6b786f">还没有强提醒。可以说「加一条强提醒：……」。</div>';
+      </div>`).join('') : '<div class="hint">还没有强提醒。可以说「加一条强提醒：……」。</div>';
   }
   const pageListEl = document.getElementById('pageList');
   const pages = Array.isArray(data.pages) ? data.pages : [];
+  const pageMeta = document.getElementById('pageCountMeta');
+  if(pageMeta) pageMeta.textContent = pages.length ? (pages.length + ' 个') : '空';
   if(pageListEl){
     pageListEl.innerHTML = pages.length ? pages.map(p => `
-      <div class="card" style="padding:12px 14px">
+      <div class="card" style="padding:12px 14px;margin-bottom:10px">
         <div class="item">
           <div>
             <strong>${escapeHtml(p.title||p.slug)}</strong>
@@ -267,33 +371,46 @@ async function refresh(){
           <a class="tiny" style="display:inline-block;background:var(--moss);color:#fff;text-decoration:none;padding:6px 10px;border-radius:12px;font-size:12px;font-weight:700"
              href="${escapeHtml(p.url)}" target="_blank" rel="noopener">打开</a>
         </div>
-      </div>`).join('') : '<div class="card" style="color:#6b786f">还没有页面。可以说「给我看喝水进度折线图」。</div>';
+      </div>`).join('') : '<div class="hint">还没有页面。可以说「给我看喝水进度折线图」。</div>';
   }
   const goals = data.todos.filter(t => t.status==='open');
+  const goalMeta = document.getElementById('goalCountMeta');
+  if(goalMeta) goalMeta.textContent = goals.length ? (goals.length + ' 条') : '空';
   if(!goals.length){
-    listEl.innerHTML = '<div class="card" style="color:#6b786f">还没有目标。先丢一句给上面的助理。</div>';
+    listEl.innerHTML = '<div class="hint">还没有目标。先丢一句给上面的助理。</div>';
     return;
   }
+  const foldState = loadFoldState();
   listEl.innerHTML = goals.map(t => {
     const calc = t.calc || {};
     const per = calc.per_interval_display;
     const timeline = Array.isArray(t.timeline) ? t.timeline : [];
+    const tlKey = 'tl_' + t.id;
+    const tlOpen = foldState[tlKey] === true;
     const tlHtml = timeline.length ? `
-      <div class="timeline">
-        ${timeline.map(s => {
-          const badge = s.state==='current' ? '<span class="tl-badge">当前</span>' : (s.state==='past' ? '<span class="tl-badge">已过</span>' : '<span class="tl-badge">待做</span>');
-          return `<div class="tl-item ${s.state}">
-            <div class="tl-time">${escapeHtml(s.time)}</div>
-            <div class="tl-rail"><div class="tl-dot"></div></div>
-            <div class="tl-main">
-              <strong>${escapeHtml(s.title||t.title)}</strong>${badge}<br/>
-              <span class="tl-amt">${escapeHtml(s.amount_text || per || '')}</span>
-            </div>
-          </div>`;
-        }).join('')}
+      <div class="fold fold-nested ${tlOpen ? 'open' : ''}" data-fold="${tlKey}">
+        <button type="button" class="fold-hd" aria-expanded="${tlOpen ? 'true' : 'false'}">
+          <span class="fold-left"><span class="chev">▾</span><span>时间轴</span></span>
+          <span class="fold-meta">${timeline.length} 段</span>
+        </button>
+        <div class="fold-bd">
+          <div class="timeline" style="border-top:none;padding-top:4px;margin-top:0">
+            ${timeline.map(s => {
+              const badge = s.state==='current' ? '<span class="tl-badge">当前</span>' : (s.state==='past' ? '<span class="tl-badge">已过</span>' : '<span class="tl-badge">待做</span>');
+              return `<div class="tl-item ${s.state}">
+                <div class="tl-time">${escapeHtml(s.time)}</div>
+                <div class="tl-rail"><div class="tl-dot"></div></div>
+                <div class="tl-main">
+                  <strong>${escapeHtml(s.title||t.title)}</strong>${badge}<br/>
+                  <span class="tl-amt">${escapeHtml(s.amount_text || per || '')}</span>
+                </div>
+              </div>`;
+            }).join('')}
+          </div>
+        </div>
       </div>` : '<div class="hint" style="margin-top:8px">暂无时间轴（需要间隔+时间窗）</div>';
     return `
-    <div class="card">
+    <div class="card" style="margin-bottom:10px">
       <div class="item">
         <div style="flex:1">
           <div><strong>${escapeHtml(t.title)}</strong> <span class="tag">${escapeHtml(t.cycle_type)}</span></div>
@@ -309,6 +426,20 @@ async function refresh(){
       ${tlHtml}
     </div>`;
   }).join('');
+  // re-bind timeline folds after re-render
+  listEl.querySelectorAll('[data-fold] > .fold-hd').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const fold = btn.parentElement;
+      const key = fold.getAttribute('data-fold');
+      const next = !fold.classList.contains('open');
+      fold.classList.toggle('open', next);
+      btn.setAttribute('aria-expanded', next ? 'true' : 'false');
+      const state = loadFoldState();
+      state[key] = next;
+      saveFoldState(state);
+    });
+  });
 }
 
 async function streamAssistant(prompt){
@@ -433,6 +564,7 @@ async function removeTodo(id){
   try{ await api('delete',{id}); await refresh(); }catch(e){ showErr(e.message); }
 }
 
+initFolds();
 Promise.all([refresh(), loadChat()]).catch(e => { msgEl.textContent=''; showErr(e.message); });
 </script>
 </body>
