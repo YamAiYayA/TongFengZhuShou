@@ -1,2 +1,3 @@
-# TongFengZhuShou
-痛风工具
+# 空仓库
+
+从零开始。
