@@ -292,6 +292,7 @@ try {
       ensure_reminders_schema($pdo);
       $pages = list_pages($pdo);
       $reminders = reminders_for_prompt($pdo);
+      $clock = clock_context_for_llm($pdo, $prompt);
       save_chat_message($pdo, 'user', $prompt, null);
       sse_send(['type' => 'start', 'model' => 'deepseek-flash', 'thinking' => true]);
       $understood = assistant_understand_stream(
@@ -305,7 +306,8 @@ try {
         },
         $history,
         $pages,
-        $reminders
+        $reminders,
+        $clock
       );
       $result = apply_understood($pdo, $understood, $open, $prompt);
       $reply = (string)($result['summary'] ?? '');
@@ -329,8 +331,9 @@ try {
     ensure_reminders_schema($pdo);
     $pages = list_pages($pdo);
     $reminders = reminders_for_prompt($pdo);
+    $clock = clock_context_for_llm($pdo, $prompt);
     save_chat_message($pdo, 'user', $prompt, null);
-    $understood = assistant_understand_stream($prompt, $open, function ($delta) {}, null, $history, $pages, $reminders);
+    $understood = assistant_understand_stream($prompt, $open, function ($delta) {}, null, $history, $pages, $reminders, $clock);
     $result = apply_understood($pdo, $understood, $open, $prompt);
     save_chat_message($pdo, 'assistant', (string)($result['summary'] ?? ''), $result['intent'] ?? null);
     $result['messages'] = load_chat_history($pdo, 40);

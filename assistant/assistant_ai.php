@@ -224,8 +224,8 @@ function history_as_messages(array $history): array {
   return $out;
 }
 
-function build_assistant_messages(string $prompt, array $openTodos, array $history = [], array $pages = [], array $reminders = []): array {
-  // 全量待办 + 页面 + 强提醒：人只说话，CRUD 全靠 actions
+function build_assistant_messages(string $prompt, array $openTodos, array $history = [], array $pages = [], array $reminders = [], array $clock = []): array {
+  // 全量待办 + 页面 + 强提醒 + 时间：人只说话，CRUD 全靠 actions
   $todoBrief = [];
   foreach ($openTodos as $t) {
     $row = [
@@ -248,9 +248,14 @@ function build_assistant_messages(string $prompt, array $openTodos, array $histo
     $todoBrief[] = $row;
   }
 
+  if (!$clock && function_exists('clock_context_for_llm')) {
+    $clock = clock_context_for_llm(null, $prompt);
+  }
+
   $system = "你是用户的私人秘书。架构：人 ↔ 你 ↔（数据库 + 页面 + 强提醒）。\n"
     . "人几乎只说话。你有三类权限：\n"
     . "A) todos 数据 CRUD；B) 展示页面 CRUD；C) 强提醒 CRUD（强提醒每次对话必读，优先级高于闲聊习惯）。\n"
+    . "每轮都会给你【当前时间】：默认按 effective_time 做调度/剩余次数/已过时段判断；用户本轮明确说「现在X点」则以该时刻为准。\n"
     . "用户要看图/报表 → upsert_page，summary 给链接。\n"
     . "只输出 JSON。intent 只能是 chat 或 act。\n"
     . "chat: {\"intent\":\"chat\",\"summary\":\"……\",\"actions\":[]}\n"
@@ -266,7 +271,7 @@ function build_assistant_messages(string $prompt, array $openTodos, array $histo
     . "2) 必须遵守「强提醒」区块；与用户本轮话冲突时先按强提醒，再礼貌说明。\n"
     . "3) 闲聊 → chat；不要 invent 任务。\n"
     . "4) 新建周期目标须用户说清间隔+时间窗+总量。\n"
-    . "5) 「现在X点」按该时刻算，此前时段已过。\n"
+    . "5) 时间以【当前时间】为准；此前时段视为已过，不要再当待做。\n"
     . "6) 要折线图 → upsert_page(kind=chart_line)。\n"
     . "7) 用户说「加一条强提醒…」→ upsert_reminder。";
 
@@ -290,12 +295,30 @@ function build_assistant_messages(string $prompt, array $openTodos, array $histo
     ? format_reminders_block($reminders)
     : '（暂无强提醒）';
 
-  $user = "【强提醒·每次必读】\n" . $reminderBlock
+  $clockLine = '';
+  if ($clock) {
+    $clockLine = sprintf(
+      "【当前时间·每次必给】\n时区 %s · 墙上时钟 %s %s %s · 调度用 effective_time=%s（来源:%s）%s%s\n说明：%s\n\n",
+      $clock['timezone'] ?? 'Asia/Shanghai',
+      $clock['wall_date'] ?? '',
+      $clock['wall_weekday'] ?? '',
+      $clock['wall_time'] ?? '',
+      $clock['effective_time'] ?? '',
+      $clock['effective_source'] ?? 'wall_clock',
+      !empty($clock['logical_time']) ? (' · 逻辑测试钟 ' . $clock['logical_time']) : '',
+      !empty($clock['user_stated_time']) ? (' · 本轮用户说 ' . $clock['user_stated_time']) : '',
+      $clock['note'] ?? ''
+    );
+  }
+
+  $user = $clockLine
+    . "【强提醒·每次必读】\n" . $reminderBlock
     . "\n\n对话历史（从旧到新）：\n" . $histText
     . "\n用户本轮说：\n" . $prompt
     . "\n\n数据库任务（可增删改查）：\n" . json_encode($todoBrief, JSON_UNESCAPED_UNICODE)
     . "\n\n已有页面（可增删改查）：\n" . json_encode($pageBrief, JSON_UNESCAPED_UNICODE)
-    . "\n\n强提醒列表（可增删改查）：\n" . json_encode($reminders, JSON_UNESCAPED_UNICODE);
+    . "\n\n强提醒列表（可增删改查）：\n" . json_encode($reminders, JSON_UNESCAPED_UNICODE)
+    . "\n\n时钟JSON：\n" . json_encode($clock, JSON_UNESCAPED_UNICODE);
 
   $messages = [
     ['role' => 'system', 'content' => $system],
@@ -339,12 +362,12 @@ function assistant_fallback(string $prompt): array {
 /**
  * Stream-aware understand: calls $onDelta for each token, returns parsed intent array.
  */
-function assistant_understand_stream(string $prompt, array $openTodos, callable $onDelta, ?callable $onThinking = null, array $history = [], array $pages = [], array $reminders = []): array {
+function assistant_understand_stream(string $prompt, array $openTodos, callable $onDelta, ?callable $onThinking = null, array $history = [], array $pages = [], array $reminders = [], array $clock = []): array {
   $prompt = trim($prompt);
   if ($prompt === '') throw new InvalidArgumentException('请输入内容');
   if (mb_strlen($prompt) > 2000) throw new InvalidArgumentException('内容过长');
 
-  $messages = build_assistant_messages($prompt, $openTodos, $history, $pages, $reminders);
+  $messages = build_assistant_messages($prompt, $openTodos, $history, $pages, $reminders, $clock);
   try {
     $content = deepseek_chat_stream($messages, $onDelta, 0.1, $onThinking);
     $parsed = extract_json_object($content);

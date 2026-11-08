@@ -241,6 +241,35 @@ function resolve_now_minutes(?string $prompt, ?int $explicit = null, ?PDO $pdo =
   return null;
 }
 
+/** Clock payload injected into every LLM turn (always). */
+function clock_context_for_llm(?PDO $pdo = null, ?string $prompt = null): array {
+  $now = new DateTimeImmutable('now');
+  $weekdays = ['日', '一', '二', '三', '四', '五', '六'];
+  $wallMin = ((int)$now->format('G')) * 60 + (int)$now->format('i');
+  $stated = parse_user_now_minutes($prompt);
+  $logical = null;
+  if ($pdo) {
+    try { $logical = get_logical_now_minutes($pdo); } catch (Throwable $e) { $logical = null; }
+  }
+  $effectiveMin = $stated !== null ? $stated : ($logical !== null ? $logical : $wallMin);
+  $effH = intdiv($effectiveMin, 60);
+  $effM = $effectiveMin % 60;
+  $source = $stated !== null ? 'user_stated' : ($logical !== null ? 'logical_test' : 'wall_clock');
+
+  return [
+    'timezone' => date_default_timezone_get() ?: 'Asia/Shanghai',
+    'wall_datetime' => $now->format('Y-m-d H:i:s'),
+    'wall_date' => $now->format('Y-m-d'),
+    'wall_weekday' => '周' . $weekdays[(int)$now->format('w')],
+    'wall_time' => $now->format('H:i'),
+    'effective_time' => sprintf('%02d:%02d', $effH, $effM),
+    'effective_source' => $source,
+    'logical_time' => $logical !== null ? sprintf('%02d:%02d', intdiv($logical, 60), $logical % 60) : null,
+    'user_stated_time' => $stated !== null ? sprintf('%02d:%02d', intdiv($stated, 60), $stated % 60) : null,
+    'note' => '调度/剩余次数默认按 effective_time；用户本轮说「现在X点」则以 user_stated 为准并写入逻辑时钟。',
+  ];
+}
+
 function current_minutes(?DateTimeInterface $now = null, ?int $overrideMin = null): int {
   if ($overrideMin !== null) return $overrideMin;
   $now = $now ?? new DateTimeImmutable('now');
