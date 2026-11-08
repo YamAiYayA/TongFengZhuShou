@@ -7,6 +7,7 @@ if (function_exists('opcache_invalidate')) {
 require __DIR__ . '/db.php';
 require __DIR__ . '/goal.php';
 require __DIR__ . '/pages.php';
+require __DIR__ . '/reminders.php';
 require __DIR__ . '/assistant_ai.php';
 require __DIR__ . '/secretary.php';
 
@@ -234,6 +235,7 @@ try {
       ? sprintf('%02d:%02d', intdiv($nowOverride, 60), $nowOverride % 60)
       : (new DateTimeImmutable('now'))->format('H:i');
     ensure_pages_schema($pdo);
+    ensure_reminders_schema($pdo);
     $pageRows = list_pages($pdo);
     $pagesOut = array_map(function ($p) {
       return [
@@ -244,9 +246,19 @@ try {
         'updated_at' => $p['updated_at'] ?? null,
       ];
     }, $pageRows);
+    $remindersOut = array_map(function ($r) {
+      return [
+        'id' => (int)$r['id'],
+        'sort_no' => (int)$r['sort_no'],
+        'title' => $r['title'],
+        'content' => $r['content'],
+        'enabled' => (int)$r['enabled'] === 1,
+      ];
+    }, list_reminders($pdo, false));
     json_out([
       'todos' => $rows,
       'pages' => $pagesOut,
+      'reminders' => $remindersOut,
       'server_time' => (new DateTimeImmutable('now'))->format('H:i'),
       'ref_time' => $ref,
       'logical_now' => get_logical_now_minutes($pdo),
@@ -277,7 +289,9 @@ try {
       $open = load_open_todos($pdo);
       $history = load_chat_history($pdo, 12);
       ensure_pages_schema($pdo);
+      ensure_reminders_schema($pdo);
       $pages = list_pages($pdo);
+      $reminders = reminders_for_prompt($pdo);
       save_chat_message($pdo, 'user', $prompt, null);
       sse_send(['type' => 'start', 'model' => 'deepseek-flash', 'thinking' => true]);
       $understood = assistant_understand_stream(
@@ -290,7 +304,8 @@ try {
           sse_send(['type' => 'thinking', 'text' => $delta]);
         },
         $history,
-        $pages
+        $pages,
+        $reminders
       );
       $result = apply_understood($pdo, $understood, $open, $prompt);
       $reply = (string)($result['summary'] ?? '');
@@ -311,9 +326,11 @@ try {
     $open = load_open_todos($pdo);
     $history = load_chat_history($pdo, 12);
     ensure_pages_schema($pdo);
+    ensure_reminders_schema($pdo);
     $pages = list_pages($pdo);
+    $reminders = reminders_for_prompt($pdo);
     save_chat_message($pdo, 'user', $prompt, null);
-    $understood = assistant_understand_stream($prompt, $open, function ($delta) {}, null, $history, $pages);
+    $understood = assistant_understand_stream($prompt, $open, function ($delta) {}, null, $history, $pages, $reminders);
     $result = apply_understood($pdo, $understood, $open, $prompt);
     save_chat_message($pdo, 'assistant', (string)($result['summary'] ?? ''), $result['intent'] ?? null);
     $result['messages'] = load_chat_history($pdo, 40);

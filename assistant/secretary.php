@@ -253,6 +253,29 @@ function execute_secretary_action(PDO $pdo, array $action, array &$open, ?int $n
     return '现有页面：' . implode('；', $bits);
   }
 
+  // —— 强提醒 CRUD：每次对话必读 ——
+  if ($op === 'upsert_reminder' || $op === 'add_reminder' || $op === 'create_reminder' || $op === 'update_reminder') {
+    $row = upsert_reminder($pdo, $action);
+    $meta['reminders'] = reminders_for_prompt($pdo);
+    $label = $row['title'] !== '' ? $row['title'] : mb_substr($row['content'], 0, 20);
+    return '已保存强提醒#' . $row['id'] . '「' . $label . '」';
+  }
+
+  if ($op === 'delete_reminder') {
+    $id = (int)($action['id'] ?? 0);
+    if ($id <= 0 || !delete_reminder($pdo, $id)) throw new RuntimeException('要删哪条强提醒？');
+    $meta['reminders'] = reminders_for_prompt($pdo);
+    return '已删除强提醒#' . $id;
+  }
+
+  if ($op === 'reorder_reminders') {
+    $ids = $action['ids'] ?? [];
+    if (!is_array($ids) || !$ids) throw new RuntimeException('排序需要 ids');
+    reorder_reminders($pdo, $ids);
+    $meta['reminders'] = reminders_for_prompt($pdo);
+    return '已重排强提醒';
+  }
+
   if ($op === 'noop' || $op === 'none') {
     return null;
   }
@@ -454,6 +477,34 @@ function heuristic_secretary_actions(string $prompt, array $open): array {
     $actions[] = ['op' => 'delete_page', 'slug' => $m[1]];
   }
 
+  // 强提醒：加一条强提醒：xxx / 新增强提醒1：yyy
+  if (preg_match('/(?:加一条|新增|添加|记下|设置)\s*强提醒\s*(\d+)?\s*[:：]?\s*(.+)$/u', $prompt, $m)
+    || preg_match('/强提醒\s*(\d+)\s*[:：]\s*(.+)$/u', $prompt, $m2)) {
+    $src = !empty($m) ? $m : $m2;
+    $sort = isset($src[1]) && $src[1] !== '' ? (int)$src[1] : null;
+    $content = trim($src[2] ?? '');
+    $title = '';
+    if (preg_match('/^【([^】]+)】\s*(.+)$/u', $content, $tm)) {
+      $title = $tm[1];
+      $content = $tm[2];
+    } elseif (preg_match('/^([^:：]{1,20})[:：]\s*(.+)$/u', $content, $tm)) {
+      $title = $tm[1];
+      $content = $tm[2];
+    }
+    if ($content !== '') {
+      $actions[] = [
+        'op' => 'upsert_reminder',
+        'title' => $title,
+        'content' => $content,
+        'sort_no' => $sort,
+      ];
+    }
+  }
+
+  if (preg_match('/(?:删掉|删除)\s*强提醒\s*#?\s*(\d+)/u', $prompt, $m)) {
+    $actions[] = ['op' => 'delete_reminder', 'id' => (int)$m[1]];
+  }
+
   return $actions;
 }
 
@@ -565,7 +616,7 @@ function apply_secretary(PDO $pdo, array $understood, array $open, string $promp
   }
 
   $notes = [];
-  $meta = ['page_urls' => [], 'pages' => []];
+  $meta = ['page_urls' => [], 'pages' => [], 'reminders' => []];
   foreach ($filtered as $a) {
     $note = execute_secretary_action($pdo, $a, $open, $nowOverride, $prompt, $meta);
     if ($note) $notes[] = $note;
@@ -612,6 +663,10 @@ function apply_secretary(PDO $pdo, array $understood, array $open, string $promp
     }
   }
 
+  if (empty($meta['reminders']) && function_exists('reminders_for_prompt')) {
+    $meta['reminders'] = reminders_for_prompt($pdo);
+  }
+
   return [
     'mode' => $understood['mode'] ?? 'live',
     'intent' => 'act',
@@ -620,6 +675,7 @@ function apply_secretary(PDO $pdo, array $understood, array $open, string $promp
     'actions_applied' => $notes,
     'pages' => $meta['pages'] ?? [],
     'page_urls' => $meta['page_urls'] ?? [],
+    'reminders' => $meta['reminders'] ?? [],
     'ref_time' => $nowOverride !== null ? sprintf('%02d:%02d', intdiv($nowOverride, 60), $nowOverride % 60) : null,
   ];
 }

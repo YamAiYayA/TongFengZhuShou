@@ -224,8 +224,8 @@ function history_as_messages(array $history): array {
   return $out;
 }
 
-function build_assistant_messages(string $prompt, array $openTodos, array $history = [], array $pages = []): array {
-  // 全量待办 + 页面：人只说话，数据与页面增删改查全靠 actions
+function build_assistant_messages(string $prompt, array $openTodos, array $history = [], array $pages = [], array $reminders = []): array {
+  // 全量待办 + 页面 + 强提醒：人只说话，CRUD 全靠 actions
   $todoBrief = [];
   foreach ($openTodos as $t) {
     $row = [
@@ -248,27 +248,27 @@ function build_assistant_messages(string $prompt, array $openTodos, array $histo
     $todoBrief[] = $row;
   }
 
-  $system = "你是用户的私人秘书。架构：人 ↔ 你 ↔（数据库 + 页面）。\n"
-    . "人几乎只说话。你有两种权限：\n"
-    . "A) 对 todos 数据完全增删改查；B) 对展示页面完全增删改查（折线图/报表/说明页）。\n"
-    . "用户要看图或报表时：你 upsert_page 生成网页，在 summary 里给出打开链接（服务端会回真实 URL）。\n"
+  $system = "你是用户的私人秘书。架构：人 ↔ 你 ↔（数据库 + 页面 + 强提醒）。\n"
+    . "人几乎只说话。你有三类权限：\n"
+    . "A) todos 数据 CRUD；B) 展示页面 CRUD；C) 强提醒 CRUD（强提醒每次对话必读，优先级高于闲聊习惯）。\n"
+    . "用户要看图/报表 → upsert_page，summary 给链接。\n"
     . "只输出 JSON。intent 只能是 chat 或 act。\n"
     . "chat: {\"intent\":\"chat\",\"summary\":\"……\",\"actions\":[]}\n"
     . "act: {\"intent\":\"act\",\"summary\":\"一句话确认\",\"actions\":[...]}\n"
     . "数据 op：create / update / delete / complete / reopen / archive / set_progress / reorder\n"
-    . "页面 op：\n"
-    . "- upsert_page: {\"op\":\"upsert_page\",\"slug\":\"water-progress\",\"title\":\"喝水进度\",\"kind\":\"chart_line\",\"spec\":{\"todo_id\":15}}\n"
-    . "- upsert_page(html): {\"op\":\"upsert_page\",\"slug\":\"note-1\",\"title\":\"说明\",\"kind\":\"html\",\"html\":\"<p>...</p>\"}\n"
-    . "- delete_page: {\"op\":\"delete_page\",\"slug\":\"...\"}\n"
-    . "- list_pages: {\"op\":\"list_pages\"}\n"
+    . "页面 op：upsert_page / delete_page / list_pages\n"
+    . "强提醒 op：\n"
+    . "- upsert_reminder: {\"op\":\"upsert_reminder\",\"id\":可选,\"title\":\"可选\",\"content\":\"必填\",\"sort_no\":可选}\n"
+    . "- delete_reminder: {\"op\":\"delete_reminder\",\"id\":数字}\n"
+    . "- reorder_reminders: {\"op\":\"reorder_reminders\",\"ids\":[id...]}\n"
     . "铁律：\n"
-    . "1) 禁止嘴上说已改/已生成却不给 actions。\n"
-    . "2) 闲聊 → chat；不要 invent 任务。\n"
-    . "3) 新建周期目标必须用户说清间隔+时间窗+总量。\n"
-    . "4) 改已有任务/排序/进度 → act。\n"
+    . "1) 禁止嘴上说已改却不给 actions。\n"
+    . "2) 必须遵守「强提醒」区块；与用户本轮话冲突时先按强提醒，再礼貌说明。\n"
+    . "3) 闲聊 → chat；不要 invent 任务。\n"
+    . "4) 新建周期目标须用户说清间隔+时间窗+总量。\n"
     . "5) 「现在X点」按该时刻算，此前时段已过。\n"
-    . "6) 要折线图/页面/可视化 → upsert_page（kind=chart_line），不要只在聊天里画 ASCII。\n"
-    . "7) summary 自然中文；页面类一定提示用户去打开链接。";
+    . "6) 要折线图 → upsert_page(kind=chart_line)。\n"
+    . "7) 用户说「加一条强提醒…」→ upsert_reminder。";
 
   $histText = '';
   foreach ($history as $h) {
@@ -286,10 +286,16 @@ function build_assistant_messages(string $prompt, array $openTodos, array $histo
     ];
   }
 
-  $user = "对话历史（从旧到新）：\n" . $histText
+  $reminderBlock = function_exists('format_reminders_block')
+    ? format_reminders_block($reminders)
+    : '（暂无强提醒）';
+
+  $user = "【强提醒·每次必读】\n" . $reminderBlock
+    . "\n\n对话历史（从旧到新）：\n" . $histText
     . "\n用户本轮说：\n" . $prompt
     . "\n\n数据库任务（可增删改查）：\n" . json_encode($todoBrief, JSON_UNESCAPED_UNICODE)
-    . "\n\n已有页面（可增删改查）：\n" . json_encode($pageBrief, JSON_UNESCAPED_UNICODE);
+    . "\n\n已有页面（可增删改查）：\n" . json_encode($pageBrief, JSON_UNESCAPED_UNICODE)
+    . "\n\n强提醒列表（可增删改查）：\n" . json_encode($reminders, JSON_UNESCAPED_UNICODE);
 
   $messages = [
     ['role' => 'system', 'content' => $system],
@@ -333,12 +339,12 @@ function assistant_fallback(string $prompt): array {
 /**
  * Stream-aware understand: calls $onDelta for each token, returns parsed intent array.
  */
-function assistant_understand_stream(string $prompt, array $openTodos, callable $onDelta, ?callable $onThinking = null, array $history = [], array $pages = []): array {
+function assistant_understand_stream(string $prompt, array $openTodos, callable $onDelta, ?callable $onThinking = null, array $history = [], array $pages = [], array $reminders = []): array {
   $prompt = trim($prompt);
   if ($prompt === '') throw new InvalidArgumentException('请输入内容');
   if (mb_strlen($prompt) > 2000) throw new InvalidArgumentException('内容过长');
 
-  $messages = build_assistant_messages($prompt, $openTodos, $history, $pages);
+  $messages = build_assistant_messages($prompt, $openTodos, $history, $pages, $reminders);
   try {
     $content = deepseek_chat_stream($messages, $onDelta, 0.1, $onThinking);
     $parsed = extract_json_object($content);

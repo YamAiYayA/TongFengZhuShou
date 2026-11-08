@@ -76,8 +76,11 @@ function ensure_schema(PDO $pdo): void {
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-  // pages schema lives in pages.php; create early if helper already loaded
+  // pages / reminders schemas when helpers already loaded
   if (function_exists('ensure_pages_schema')) {
     ensure_pages_schema($pdo);
+  }
+  if (function_exists('ensure_reminders_schema')) {
+    ensure_reminders_schema($pdo);
   }
 }

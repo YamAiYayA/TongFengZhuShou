@@ -115,7 +115,7 @@
 <body>
 <main>
   <h1>助理</h1>
-  <p class="sub">人说话 → 助理改库 + 改页面。要折线图/报表，直接说，他生成网页链接给你打开。</p>
+  <p class="sub">人说话 → 助理改库 / 改页面 / 改强提醒。强提醒每次对话必读，加一次不用反复说。</p>
   <div id="msg" class="ok">加载中…</div>
   <div id="err" class="err" style="display:none"></div>
 
@@ -125,7 +125,8 @@
       例1：9点到23点，每20分钟喝水，全天3L<br/>
       例2：现在12点了，已经喝了500ml<br/>
       例3：把喝水间隔改成30分钟 / 目标改成2.5L<br/>
-      例4：给我看喝水进度折线图
+      例4：给我看喝水进度折线图<br/>
+      例5：加一条强提醒：说话简洁，改库必须给 actions
     </p>
     <textarea id="aiPrompt" placeholder="用自然语言说目标和进度…"></textarea>
     <button id="aiBtn" type="button">发送给助理</button>
@@ -143,6 +144,11 @@
   <section>
     <strong>进行中的目标</strong>
     <div id="list" style="margin-top:10px"></div>
+  </section>
+
+  <section style="margin-top:18px">
+    <strong>强提醒（DeepSeek 每次必读）</strong>
+    <div id="reminderList" style="margin-top:10px"></div>
   </section>
 
   <section style="margin-top:18px">
@@ -235,6 +241,18 @@ async function refresh(){
     ? ` · 参考 ${data.ref_time}（测试）`
     : ` · ${data.server_time||''}`;
   msgEl.textContent = '已连接 · deepseek-flash · 思考开 · '+data.todos.length+' 条' + clockNote;
+  const reminderListEl = document.getElementById('reminderList');
+  const reminders = Array.isArray(data.reminders) ? data.reminders : [];
+  if(reminderListEl){
+    const enabled = reminders.filter(r => r.enabled !== false);
+    reminderListEl.innerHTML = enabled.length ? enabled.map((r,i) => `
+      <div class="card" style="padding:12px 14px">
+        <div><span class="tag">强提醒 ${r.sort_no || (i+1)}</span>
+          ${r.title ? `<strong style="margin-left:6px">${escapeHtml(r.title)}</strong>` : ''}
+        </div>
+        <div class="hint" style="margin-top:6px;white-space:pre-wrap;color:var(--ink)">${escapeHtml(r.content||'')}</div>
+      </div>`).join('') : '<div class="card" style="color:#6b786f">还没有强提醒。可以说「加一条强提醒：……」。</div>';
+  }
   const pageListEl = document.getElementById('pageList');
   const pages = Array.isArray(data.pages) ? data.pages : [];
   if(pageListEl){
